@@ -35,20 +35,26 @@ Resources:
               - Effect: Allow
                 Action:
                   - logs:DescribeLogGroups
+                  - logs:FilterLogEvents
+                  - logs:GetLogEvents
                 Resource:
-                - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
               - Effect: Allow
                 Action:
-                  - logs:DescribeLogStreams
                   - logs:CreateLogGroup
+                  - logs:DescribeLogStreams
+                  - logs:PutRetentionPolicy
                 Resource:
-                - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:aws/spans:*'
               - Effect: Allow
                 Action:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/application-signals/data:*'
                   - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:aws/spans:*'
               - Effect: Allow
                 Resource: "*"
                 Action: cloudwatch:PutMetricData
