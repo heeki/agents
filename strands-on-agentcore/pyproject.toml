@@ -1,0 +1,7 @@
+[project]
+name = "strands-on-agentcore"
+version = "0.1.0"
+description = "Strands Agents example deployed on Bedrock AgentCore"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
