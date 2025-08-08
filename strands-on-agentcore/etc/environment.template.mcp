@@ -1,0 +1,85 @@
+# aws configuration
+PROFILE=your-aws-cli-profile
+REGION=us-east-1
+BUCKET=your-s3-bucket-for-deployment
+ACCOUNTID=your-aws-account-id
+
+# infrastructure configuration
+P_REPOSITORY_NAME=agentcore/hello
+INFRASTRUCTURE_STACK=agentcore-infrastructure
+INFRASTRUCTURE_TEMPLATE=iac/infrastructure.yaml
+INFRASTRUCTURE_OUTPUT=iac/infrastructure_output.yaml
+INFRASTRUCTURE_PARAMS="ParameterKey=repositoryName,ParameterValue=${P_REPOSITORY_NAME}"
+O_ECR_REPO=output-repo-name
+O_ECR_REPO_ARN=output-repo-arn
+O_ECR_REPO_URI=output-repo-uri
+O_AGENT_ROLE_ARN=output-role-arn
+
+# container configuration
+C_DOCKERFILE=dockerfile.mcp
+C_REPO_BASE=${ACCOUNTID}.dkr.ecr.${REGION}.amazonaws.com
+C_REPO_IMAGE=${O_ECR_REPO}
+C_VERSION=1
+C_TAG=${C_REPO_IMAGE}:${C_VERSION}
+C_REPO_URI=${C_REPO_BASE}/${C_REPO_IMAGE}:${C_VERSION}
+
+# cognito configuration
+P_COGNITO_USERNAME=example-username
+P_COGNITO_USEREMAIL=user@example.com
+P_COGNITO_DOMAINNAME=agentcore-mcp
+P_COGNITO_RESOURCE_SERVER_IDENTIFIER=mcp.example.com
+P_COGNITO_RESOURCE_SERVER_NAME=mcp-resource-endpoint
+COGNITO_STACK=agentcore-cognito
+COGNITO_TEMPLATE=iac/cognito.yaml
+COGNITO_OUTPUT=iac/cognito_output.yaml
+COGNITO_PARAMS="ParameterKey=cognitoUserName,ParameterValue=${P_COGNITO_USERNAME} ParameterKey=cognitoUserEmail,ParameterValue=${P_COGNITO_USEREMAIL} ParameterKey=domainName,ParameterValue=${P_COGNITO_DOMAINNAME} ParameterKey=resourceServerIdentifier,ParameterValue=${P_COGNITO_RESOURCE_SERVER_IDENTIFIER} ParameterKey=resourceServerName,ParameterValue=${P_COGNITO_RESOURCE_SERVER_NAME}"
+O_COGNITO_USERPOOL=your-cognito-userpool-id
+O_COGNITO_PROVIDERNAME=your-cognito-provider-name
+O_COGNITO_PROVIDERURL=your-cognito-provider-url
+O_COGNITO_CLIENTID=your-cognito-client-id
+O_COGNITO_CLIENTSECRET=your-cognito-client-secret
+
+P_COGNITO_SECRETHASH=your-generated-secret-hash
+P_COGNITO_USERTEMPPW=your-cognito-user-temporary-password
+P_COGNITO_USERPERMPW=your-cognito-user-permanent-password
+
+P_COGNITO_DISCOVERY_URL=https://cognito-idp.${REGION}.amazonaws.com/${O_COGNITO_USERPOOL}/.well-known/openid-configuration
+P_COGNITO_AUTH_URL=https://${P_COGNITO_DOMAINNAME}.auth.${REGION}.amazoncognito.com/oauth2/authorize
+P_COGNITO_TOKEN_URL=https://${P_COGNITO_DOMAINNAME}.auth.${REGION}.amazoncognito.com/oauth2/token
+
+# langfuse configuration
+LANGFUSE_HOST=https://us.cloud.langfuse.com
+LANGFUSE_PUBLIC_KEY=your-langfuse-public-key
+LANGFUSE_SECRET_KEY=your-langfuse-secret-key
+export LANGFUSE_HOST
+export LANGFUSE_PUBLIC_KEY
+export LANGFUSE_SECRET_KEY
+
+# agent pre-configuration
+EXECUTION_ROLE=${O_AGENT_ROLE_ARN}
+AGENT_NAME=mcp_example
+SERVER_PROTOCOL=MCP
+ENV_VARS='{"LANGFUSE_HOST": "${LANGFUSE_HOST}", "LANGFUSE_PUBLIC_KEY": "${LANGFUSE_PUBLIC_KEY}", "LANGFUSE_SECRET_KEY": "${LANGFUSE_SECRET_KEY}"}'
+AUTHORIZER_CONFIGURATION='{"customJWTAuthorizer":{"discoveryUrl":"${P_COGNITO_DISCOVERY_URL}","allowedClients":["${O_COGNITO_CLIENTID}"]}}'
+
+# agent deployed configuration
+O_AGENT_ARN=output-agent-runtime-arn
+O_AGENT_ID=output-agent-runtime-id
+O_AGENT_VERSION=DEFAULT
+export AGENT_ARN=${O_AGENT_ARN}
+export BEARER_TOKEN=your-temporary-bearer-token
+
+# agent invocation configuration
+P_PROMPT='What is VO2 max? What is the best way to improve it?'
+
+# otel configuration
+export OTEL_METRICS_EXPORTER=none
+export OTEL_TRACES_EXPORTER=none
+export OTEL_LOGS_EXPORTER=none
+export OTEL_RESOURCE_DETECTORS=none
+
+# platform configuration: linux/amd64 | linux/arm64
+PLATFORM_DEPLOY=linux/arm64
+PLATFORM_LOCAL=linux/arm64
+HOST_PORT=8000
+CONTAINER_PORT=8000

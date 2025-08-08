@@ -98,7 +98,7 @@ Resources:
                   - bedrock-agentcore:GetWorkloadAccessTokenForUserId
                 Resource:
                   - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default'
-                  - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default/workload-identity/agentName-*'
+                  - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default/workload-identity/*'
               - Effect: Allow
                 Action:
                   - bedrock:InvokeModel

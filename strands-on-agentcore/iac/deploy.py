@@ -7,7 +7,6 @@ from boto3.session import Session
 from botocore.exceptions import ClientError
 
 # constants
-ENTRYPOINT = "src/agent.py"
 REQUIREMENTS_FILE = "requirements.txt"
 
 # initialization
@@ -38,26 +37,34 @@ class AgentCoreRuntime:
             return target_runtime[0]
         return None
 
-    def create_runtime(self, runtime_name, ecr_repo_uri, execution_role):
-        try:
-            response = self.client_agentcore_cp.create_agent_runtime(
-                agentRuntimeName=runtime_name,
-                agentRuntimeArtifact={
-                    'containerConfiguration': {
-                        'containerUri': ecr_repo_uri,
-                    }
-                },
-                roleArn=execution_role,
-                networkConfiguration={
-                    'networkMode': 'PUBLIC'
-                },
-                protocolConfiguration={
-                    'serverProtocol': 'HTTP'
-                },
-                environmentVariables={
-                    'AGENT_NAME': runtime_name
+    def _configure_runtime_params(self, action: str, ecr_repo_uri: str, execution_role: str, server_protocol: str = "HTTP", runtime_name: str = None, runtime_id: str = None, env_vars: dict = {}, authorizer_configuration: dict = {}):
+        params = {
+            'agentRuntimeArtifact': {
+                'containerConfiguration': {
+                    'containerUri': ecr_repo_uri,
                 }
-            )
+            },
+            'roleArn': execution_role,
+            'networkConfiguration': {
+                'networkMode': 'PUBLIC'
+            },
+            'protocolConfiguration': {
+                'serverProtocol': server_protocol
+            },
+            'environmentVariables': env_vars
+        }
+        if action == "create":
+            params['agentRuntimeName'] = runtime_name
+        elif action == "update":
+            params['agentRuntimeId'] = runtime_id
+        if authorizer_configuration:
+            params['authorizerConfiguration'] = authorizer_configuration
+        return params
+
+    def create_runtime(self, runtime_name: str, ecr_repo_uri: str, execution_role: str, server_protocol: str = "HTTP", env_vars: dict = {}):
+        try:
+            params = self._configure_runtime_params("create", ecr_repo_uri, execution_role, server_protocol, runtime_name=runtime_name, env_vars=env_vars)
+            response = self.client_agentcore_cp.create_agent_runtime(**params)
             return response
         except ClientError as e:
             error_code = e.response['Error']['Code']
@@ -68,6 +75,15 @@ class AgentCoreRuntime:
             else:
                 logging.error(f"Error creating agent runtime: {e}")
                 raise e
+
+    def update_runtime(self, runtime_id: str, ecr_repo_uri: str, execution_role: str, server_protocol: str = "HTTP", env_vars: dict = {}, authorizer_configuration: dict = {}):
+        try:
+            params = self._configure_runtime_params("update", ecr_repo_uri, execution_role, server_protocol, runtime_id=runtime_id, env_vars=env_vars, authorizer_configuration=authorizer_configuration)
+            response = self.client_agentcore_cp.update_agent_runtime(**params)
+            return response
+        except ClientError as e:
+            logging.error(f"Error updating agent runtime: {e}")
+            raise e
 
     def invoke(self, agent_arn, agent_version="DEFAULT", prompt="What is VO2 max?"):
         response = self.client_agentcore_dp.invoke_agent_runtime(
@@ -99,21 +115,37 @@ class AgentCoreRuntime:
 @click.command()
 @click.option("--action", required=True, default="invoke", help="Action to perform")
 @click.option("--runtime-name", help="Agent runtime name")
+@click.option("--runtime-id", help="Agent runtime ID")
 @click.option("--ecr-repo-uri", help="ECR repository URI")
 @click.option("--execution-role", help="Execution role ARN")
+@click.option("--server-protocol", help="Server protocol", default="HTTP")
+@click.option("--env-vars", help="Environment variables")
+@click.option("--authorizer-configuration", help="Authorizer configuration")
 @click.option("--agent-arn", help="Agent ARN")
 @click.option("--agent-version", help="Agent version")
 @click.option("--prompt", help="Prompt to send to the agent")
-def main(action, runtime_name, ecr_repo_uri, execution_role, agent_arn, agent_version, prompt):
+def main(action, runtime_name, runtime_id, ecr_repo_uri, execution_role, server_protocol, env_vars, authorizer_configuration, agent_arn, agent_version, prompt):
     agentcore_runtime = AgentCoreRuntime()
     logging.debug(f"Action: {action}")
     logging.debug(f"Runtime name: {runtime_name}")
+    logging.debug(f"Runtime ID: {runtime_id}")
     logging.debug(f"ECR repository URI: {ecr_repo_uri}")
     logging.debug(f"Execution role ARN: {execution_role}")
+    logging.debug(f"Server protocol: {server_protocol}")
+    logging.debug(f"Environment variables: {env_vars}")
+    logging.debug(f"Authorizer configuration: {authorizer_configuration}")
     match action:
         case "create":
-            logging.info(json.dumps({"runtime_name": runtime_name, "ecr_repo_uri": ecr_repo_uri, "execution_role": execution_role}))
-            response = agentcore_runtime.create_runtime(runtime_name, ecr_repo_uri, execution_role)
+            env_vars = json.loads(env_vars)
+            authorizer_configuration = json.loads(authorizer_configuration)
+            logging.info(json.dumps({"runtime_name": runtime_name, "ecr_repo_uri": ecr_repo_uri, "execution_role": execution_role, "server_protocol": server_protocol, "env_vars": env_vars, "authorizer_configuration": authorizer_configuration}))
+            response = agentcore_runtime.create_runtime(runtime_name, ecr_repo_uri, execution_role, server_protocol, env_vars, authorizer_configuration)
+            logging.info(json.dumps(response, cls=DateTimeEncoder))
+        case "update":
+            env_vars = json.loads(env_vars)
+            authorizer_configuration = json.loads(authorizer_configuration)
+            logging.info(json.dumps({"runtime_name": runtime_name, "ecr_repo_uri": ecr_repo_uri, "execution_role": execution_role, "server_protocol": server_protocol, "env_vars": env_vars, "authorizer_configuration": authorizer_configuration}))
+            response = agentcore_runtime.update_runtime(runtime_id, ecr_repo_uri, execution_role, server_protocol, env_vars, authorizer_configuration)
             logging.info(json.dumps(response, cls=DateTimeEncoder))
         case "invoke":
             logging.info(json.dumps({"agent_arn": agent_arn, "agent_version": agent_version}))
