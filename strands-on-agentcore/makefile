@@ -46,7 +46,7 @@ podman.push:
 
 # local testing
 local.agent:
-	uv run agent/strands.py
+	uv run agent/app.py
 local.podman:
 	podman run --platform ${PLATFORM_DEPLOY} -p ${HOST_PORT}:${CONTAINER_PORT} --env-file etc/environment.docker \
 		-v ${HOME}/.aws:/home/bedrock_agentcore/.aws:ro \
@@ -65,10 +65,14 @@ local.mcp.client:
 inspector:
 	npx @modelcontextprotocol/inspector
 
+# optional flags
+ENV_VARS_FLAG := $(if $(strip $(ENV_VARS)),--env-vars ${ENV_VARS},)
+AUTHORIZE_FLAG := $(if $(strip $(AUTHORIZER_CONFIGURATION)),--authorizer-configuration ${AUTHORIZER_CONFIGURATION},)
+
 # agentcore
 agentcore.create:
-	uv run iac/deploy.py --action create --runtime-name ${AGENT_NAME} --ecr-repo-uri ${C_REPO_URI} --execution-role ${EXECUTION_ROLE} --server-protocol ${SERVER_PROTOCOL} --env-vars ${ENV_VARS} --authorizer-configuration ${AUTHORIZER_CONFIGURATION}
+	uv run iac/deploy.py --action create --runtime-name ${AGENT_NAME} --ecr-repo-uri ${C_REPO_URI} --execution-role ${EXECUTION_ROLE} --server-protocol ${SERVER_PROTOCOL} ${ENV_VARS_FLAG} ${AUTHORIZE_FLAG}
 agentcore.update:
-	uv run iac/deploy.py --action update --runtime-id ${O_AGENT_ID} --ecr-repo-uri ${C_REPO_URI} --execution-role ${EXECUTION_ROLE} --server-protocol ${SERVER_PROTOCOL} --env-vars ${ENV_VARS} --authorizer-configuration ${AUTHORIZER_CONFIGURATION}
+	uv run iac/deploy.py --action update --runtime-id ${O_AGENT_ID} --ecr-repo-uri ${C_REPO_URI} --execution-role ${EXECUTION_ROLE} --server-protocol ${SERVER_PROTOCOL} ${ENV_VARS_FLAG} ${AUTHORIZE_FLAG}
 agentcore.invoke:
 	uv run iac/deploy.py --action invoke --agent-arn ${O_AGENT_ARN} --agent-version ${O_AGENT_VERSION} --prompt ${P_PROMPT}

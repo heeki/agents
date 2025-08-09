@@ -19,4 +19,4 @@ EXPOSE 8080
 # copy entire project (respecting .dockerignore)
 COPY . .
 
-CMD ["opentelemetry-instrument", "python", "agent/strands.py"]
+CMD ["opentelemetry-instrument", "python", "agent/app.py"]

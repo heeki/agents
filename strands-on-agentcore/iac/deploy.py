@@ -50,20 +50,21 @@ class AgentCoreRuntime:
             },
             'protocolConfiguration': {
                 'serverProtocol': server_protocol
-            },
-            'environmentVariables': env_vars
+            }
         }
         if action == "create":
             params['agentRuntimeName'] = runtime_name
         elif action == "update":
             params['agentRuntimeId'] = runtime_id
+        if env_vars:
+            params['environmentVariables'] = env_vars
         if authorizer_configuration:
             params['authorizerConfiguration'] = authorizer_configuration
         return params
 
-    def create_runtime(self, runtime_name: str, ecr_repo_uri: str, execution_role: str, server_protocol: str = "HTTP", env_vars: dict = {}):
+    def create_runtime(self, runtime_name: str, ecr_repo_uri: str, execution_role: str, server_protocol: str = "HTTP", env_vars: dict = {}, authorizer_configuration: dict = {}):
         try:
-            params = self._configure_runtime_params("create", ecr_repo_uri, execution_role, server_protocol, runtime_name=runtime_name, env_vars=env_vars)
+            params = self._configure_runtime_params("create", ecr_repo_uri, execution_role, server_protocol, runtime_name=runtime_name, env_vars=env_vars, authorizer_configuration=authorizer_configuration)
             response = self.client_agentcore_cp.create_agent_runtime(**params)
             return response
         except ClientError as e:
@@ -126,24 +127,30 @@ class AgentCoreRuntime:
 @click.option("--prompt", help="Prompt to send to the agent")
 def main(action, runtime_name, runtime_id, ecr_repo_uri, execution_role, server_protocol, env_vars, authorizer_configuration, agent_arn, agent_version, prompt):
     agentcore_runtime = AgentCoreRuntime()
-    logging.debug(f"Action: {action}")
-    logging.debug(f"Runtime name: {runtime_name}")
-    logging.debug(f"Runtime ID: {runtime_id}")
-    logging.debug(f"ECR repository URI: {ecr_repo_uri}")
-    logging.debug(f"Execution role ARN: {execution_role}")
-    logging.debug(f"Server protocol: {server_protocol}")
-    logging.debug(f"Environment variables: {env_vars}")
-    logging.debug(f"Authorizer configuration: {authorizer_configuration}")
+    debug_vars = {
+        "action": action,
+        "runtime_name": runtime_name,
+        "runtime_id": runtime_id,
+        "ecr_repo_uri": ecr_repo_uri,
+        "execution_role": execution_role,
+        "server_protocol": server_protocol,
+        "env_vars": env_vars,
+        "authorizer_configuration": authorizer_configuration,
+        "agent_arn": agent_arn,
+        "agent_version": agent_version,
+        "prompt": prompt
+    }
+    logging.debug(json.dumps(debug_vars, indent=4, cls=DateTimeEncoder))
     match action:
         case "create":
-            env_vars = json.loads(env_vars)
-            authorizer_configuration = json.loads(authorizer_configuration)
+            env_vars = json.loads(env_vars) if env_vars else None
+            authorizer_configuration = json.loads(authorizer_configuration) if authorizer_configuration else None
             logging.info(json.dumps({"runtime_name": runtime_name, "ecr_repo_uri": ecr_repo_uri, "execution_role": execution_role, "server_protocol": server_protocol, "env_vars": env_vars, "authorizer_configuration": authorizer_configuration}))
             response = agentcore_runtime.create_runtime(runtime_name, ecr_repo_uri, execution_role, server_protocol, env_vars, authorizer_configuration)
             logging.info(json.dumps(response, cls=DateTimeEncoder))
         case "update":
-            env_vars = json.loads(env_vars)
-            authorizer_configuration = json.loads(authorizer_configuration)
+            env_vars = json.loads(env_vars) if env_vars else None
+            authorizer_configuration = json.loads(authorizer_configuration) if authorizer_configuration else None
             logging.info(json.dumps({"runtime_name": runtime_name, "ecr_repo_uri": ecr_repo_uri, "execution_role": execution_role, "server_protocol": server_protocol, "env_vars": env_vars, "authorizer_configuration": authorizer_configuration}))
             response = agentcore_runtime.update_runtime(runtime_id, ecr_repo_uri, execution_role, server_protocol, env_vars, authorizer_configuration)
             logging.info(json.dumps(response, cls=DateTimeEncoder))
