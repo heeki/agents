@@ -14,8 +14,10 @@ app = BedrockAgentCoreApp()
 agent = Agent()
 
 @app.entrypoint
-async def agent_invocation(payload):
+async def agent_invocation(payload, context):
     """Handler for agent invocation"""
+    logging.info(f"Agent invocation payload: {payload}")
+    logging.info(f"Agent invocation context: {context}")
     user_message = payload.get(
         "prompt", "No prompt found in input, please guide customer to create a json payload with prompt key"
     )
