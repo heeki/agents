@@ -47,6 +47,8 @@ podman.push:
 # local testing
 local.agent:
 	uv run agent/app.py
+local.agent.memory:
+	uv run agent/app_memory.py
 local.podman:
 	podman run --platform ${PLATFORM_DEPLOY} -p ${HOST_PORT}:${CONTAINER_PORT} --env-file etc/environment.docker \
 		-v ${HOME}/.aws:/home/bedrock_agentcore/.aws:ro \
@@ -55,7 +57,13 @@ local.podman:
 local.podman.clean:
 	podman container prune -f || true
 local.test:
-	curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"prompt": "Hello world!"}'
+	curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"prompt": "What is VO2 max? What is the best way to improve it?"}'
+local.test.memory1:
+	curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"prompt": "My name is ${USER_ID}. What is VO2 max? What is the best way to improve it?"}'
+local.test.memory2:
+	curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"prompt": "What are the ranges of values? What is good for a non-professional but active runner?"}'
+local.test.memory3:
+	curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"prompt": "What is my name again?"}'
 
 # mcp testing
 local.mcp:
