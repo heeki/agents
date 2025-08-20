@@ -1,0 +1,7 @@
+[project]
+name = "crewai-on-agentcore"
+version = "0.1.0"
+description = "CrewAI example deployed on Bedrock AgentCore"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []

@@ -1,0 +1,5 @@
+boto3==1.40.13
+crewai==0.165.1
+crewai-tools==0.62.3
+langfuse==3.3.0
+mcp==1.13.0

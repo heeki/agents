@@ -1,0 +1,20 @@
+# python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# virtual environments
+.venv
+
+# directories
+output
+
+# files
+.bedrock_agentcore.yaml
+notes.md
+*_output.yaml
+etc/*.docker
+etc/*.sh
