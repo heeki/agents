@@ -1,0 +1,4 @@
+langchain==0.3.27
+langchain-aws==0.2.31
+langgraph==0.6.6
+langsmith==0.4.15

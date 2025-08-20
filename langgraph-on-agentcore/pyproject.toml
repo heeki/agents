@@ -1,0 +1,7 @@
+[project]
+name = "langgraph-on-agentcore"
+version = "0.1.0"
+description = "LangGraph example deployed on Bedrock AgentCore"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []

@@ -6,3 +6,5 @@ This repository contains implementations of AI agent architectural patterns and 
 
 This repository demonstrates various approaches to implementing AI agents, with the following implementations:
 - Strands Agents on Bedrock AgentCore
+- CrewAI on Bedrock AgentCore (WIP)
+- LangGraph on Bedrock AgentCore (WIP)
