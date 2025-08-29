@@ -1,0 +1,7 @@
+[project]
+name = "strands-with-agentcore-gateway"
+version = "0.1.0"
+description = "Strands Agents example deployed on Bedrock AgentCore integrated with AgentCore Gateway"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
