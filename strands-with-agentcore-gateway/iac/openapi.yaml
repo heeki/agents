@@ -1,0 +1,135 @@
+openapi: 3.0.1
+info:
+  title: apigw-agentcore-gateway
+  description: API Gateway target for AgentCore Gateway
+  version: 0.1.0
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+components:
+  schemas:
+    error:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string
+    user:
+      type: object
+      properties:
+        id:
+          type: string
+        given_name:
+          type: string
+        family_name:
+          type: string
+        birthdate:
+          type: string
+        email:
+          type: string
+        phone_number:
+          type: string
+        phone_number_verified:
+          type: boolean
+    users:
+      type: array
+      items:
+        $ref: "#/components/schemas/user"
+    uid:
+      type: object
+      properties:
+        uid:
+          type: string
+  responses:
+    error:
+      description: internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/error"
+          example:
+            code: 500
+            message: "unable to retrieve message"
+  securitySchemes:
+    cognitoAuthorizer:
+      type: apiKey
+      name: Authorization
+      in: header
+      x-amazon-apigateway-authtype: cognito_user_pools
+      x-amazon-apigateway-authorizer:
+        type: cognito_user_pools
+        providerARNs:
+          - Fn::Sub: "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${cognitoUserPoolId}"
+        identitySource: method.request.header.Authorization
+
+paths:
+  /:
+    get:
+      summary: user
+      description: returns list of users
+      responses:
+        200:
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/user"
+        500:
+          $ref: "#/components/responses/error"
+        default:
+          $ref: "#/components/responses/error"
+      security:
+        - cognitoAuthorizer: []
+      x-amazon-apigateway-integration:
+        httpMethod: POST
+        payloadFormatVersion: "1.0"
+        responses:
+          default:
+            statusCode: 200
+        type: AWS_PROXY
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${FnApi}/invocations"
+    post:
+      summary: user
+      description: create user
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/user"
+            examples:
+              acme:
+                value:
+                  uid: "eac9f980-8180-49d8-836c-c01386bc94cf"
+                  name: "Acme"
+                  email: "contact@acme.com"
+              hooli:
+                value:
+                  uid: "c92d40d1-5391-4c48-9f7e-51091cd9e551"
+                  name: "Hooli"
+                  email: "contact@hooli.com"
+      responses:
+        200:
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/user"
+        500:
+          $ref: "#/components/responses/error"
+        default:
+          $ref: "#/components/responses/error"
+      security:
+        - cognitoAuthorizer: []
+      x-amazon-apigateway-integration:
+        httpMethod: POST
+        payloadFormatVersion: "1.0"
+        responses:
+          default:
+            statusCode: 200
+        type: AWS_PROXY
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${FnApi}/invocations"

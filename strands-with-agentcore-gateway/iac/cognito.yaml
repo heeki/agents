@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Cognito identity pool for MCP servers
+Parameters:
+  cognitoUserName:
+    Type: String
+  cognitoUserEmail:
+    Type: String
+  domainName:
+    Type: String
+  resourceServerIdentifier:
+    Type: String
+  resourceServerName:
+    Type: String
+Resources:
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+          TemporaryPasswordValidityDays: 3
+  CognitoDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref domainName
+      UserPoolId: !Ref CognitoUserPool
+  CognitoResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      Identifier: !Ref resourceServerIdentifier
+      Name: !Ref resourceServerName
+      Scopes:
+        - ScopeName: agentcore:mcp_echo
+          ScopeDescription: "MCP echo"
+      UserPoolId: !Ref CognitoUserPool
+  CognitoClient:
+    DependsOn: CognitoResourceServer
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthScopes:
+        - !Sub '${resourceServerIdentifier}/agentcore:mcp_echo'
+      ExplicitAuthFlows:
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      GenerateSecret: true
+      UserPoolId: !Ref CognitoUserPool
+  CognitoUser:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      Username: !Ref cognitoUserName
+      UserPoolId: !Ref CognitoUserPool
+      UserAttributes:
+        - Name: email
+          Value: !Ref cognitoUserEmail
+        - Name: email_verified
+          Value: true
+      ForceAliasCreation: true
+Outputs:
+  outCognitoUserPool:
+    Value: !Ref CognitoUserPool
+  outCognitoProviderName:
+    Value: !GetAtt CognitoUserPool.ProviderName
+  outCognitoProviderUrl:
+    Value: !GetAtt CognitoUserPool.ProviderURL
+  outCognitoClientId:
+    Value: !Ref CognitoClient
