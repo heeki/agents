@@ -62,3 +62,13 @@ curl.apigw:
 	curl -s -X POST ${O_API_ENDPOINT} -H "Content-Type: application/json" -d '{"prompt": "What is VO2 max? What is the best way to improve it?"}' | jq 'del(.multiValueHeaders)'
 curl.apigw.auth:
 	curl -s -X POST ${O_API_ENDPOINT} -H "Content-Type: application/json" -H "Authorization: Bearer ${O_COGNITO_ACCESS_TOKEN}" -d '{"prompt": "What is VO2 max? What is the best way to improve it?"}' | jq 'del(.multiValueHeaders)'
+
+# optional flags
+ENV_VARS_FLAG := $(if $(strip $(ENV_VARS)),--env-vars ${ENV_VARS},)
+AUTHORIZE_FLAG := $(if $(strip $(AUTHORIZER_CONFIGURATION)),--authorizer-configuration ${AUTHORIZER_CONFIGURATION},)
+
+# agentcore
+agentcore.create:
+	uv run iac/deploy_gateway.py --action create --gateway-name ${GATEWAY_NAME} --description '${GATEWAY_DESCRIPTION}' --execution-role ${GATEWAY_EXECUTION_ROLE} ${AUTHORIZE_FLAG}
+agentcore.update:
+	uv run iac/deploy_gateway.py --action update --gateway-id ${GATEWAY_ID} --gateway-name ${GATEWAY_NAME} --description '${GATEWAY_DESCRIPTION}' --execution-role ${GATEWAY_EXECUTION_ROLE} ${AUTHORIZE_FLAG}
