@@ -1,0 +1,107 @@
+# aws configuration
+PROFILE=your-aws-cli-profile
+REGION=us-east-1
+BUCKET=your-s3-bucket-for-deployment
+ACCOUNTID=your-aws-account-id
+
+# infrastructure configuration
+P_HOSTEDZONE_ID=your-hosted-zone-id
+P_DOMAINNAME=your-domain-name.com
+P_REPOSITORY_NAME=agentcore/hello-with-agentcore-gateway
+INFRASTRUCTURE_STACK=agentcore-gateway-infrastructure
+INFRASTRUCTURE_TEMPLATE=iac/infrastructure.yaml
+INFRASTRUCTURE_OUTPUT=iac/infrastructure_output.yaml
+INFRASTRUCTURE_PARAMS="ParameterKey=domainName,ParameterValue=${P_DOMAINNAME} ParameterKey=hostedZoneId,ParameterValue=${P_HOSTEDZONE_ID} ParameterKey=repositoryName,ParameterValue=${P_REPOSITORY_NAME}"
+O_CERT_ARN=output-certificate-arn
+O_ECR_REPO=output-repo-name
+O_ECR_REPO_ARN=output-repo-arn
+O_ECR_REPO_URI=output-repo-uri
+O_GATEWAY_ROLE_ARN=output-gateway-role-arn
+
+# container configuration
+C_DOCKERFILE=dockerfile.strands
+C_REPO_BASE=${ACCOUNTID}.dkr.ecr.${REGION}.amazonaws.com
+C_REPO_IMAGE=${O_ECR_REPO}
+C_VERSION=1
+C_TAG=${C_REPO_IMAGE}:${C_VERSION}
+C_REPO_URI=${C_REPO_BASE}/${C_REPO_IMAGE}:${C_VERSION}
+
+# cognito configuration
+P_COGNITO_USERNAME=your-username
+P_COGNITO_USEREMAIL=your-email@example.com
+P_COGNITO_DOMAINNAME=your-cognito-domain
+P_COGNITO_RESOURCE_SERVER_IDENTIFIER=your-resource-server-identifier
+P_COGNITO_RESOURCE_SERVER_NAME=your-resource-server-name
+COGNITO_STACK=agentcore-gateway-cognito
+COGNITO_TEMPLATE=iac/cognito.yaml
+COGNITO_OUTPUT=iac/cognito_output.yaml
+COGNITO_PARAMS="ParameterKey=cognitoUserName,ParameterValue=${P_COGNITO_USERNAME} ParameterKey=cognitoUserEmail,ParameterValue=${P_COGNITO_USEREMAIL} ParameterKey=domainName,ParameterValue=${P_COGNITO_DOMAINNAME} ParameterKey=resourceServerIdentifier,ParameterValue=${P_COGNITO_RESOURCE_SERVER_IDENTIFIER} ParameterKey=resourceServerName,ParameterValue=${P_COGNITO_RESOURCE_SERVER_NAME}"
+O_COGNITO_USERPOOL=output-user-pool-id
+O_COGNITO_PROVIDERNAME=cognito-idp.${REGION}.amazonaws.com/${O_COGNITO_USERPOOL}
+O_COGNITO_PROVIDERURL=https://cognito-idp.${REGION}.amazonaws.com/${O_COGNITO_USERPOOL}
+O_COGNITO_CLIENTID=output-client-id
+O_COGNITO_CLIENTSECRET=output-client-secret
+
+P_COGNITO_SECRETHASH=output-secret-hash
+P_COGNITO_USERTEMPPW=your-temp-password
+P_COGNITO_USERPERMPW=your-permanent-password
+
+P_COGNITO_DISCOVERY_URL=https://cognito-idp.${REGION}.amazonaws.com/${O_COGNITO_USERPOOL}/.well-known/openid-configuration
+P_COGNITO_ISSUER_URL=https://${P_COGNITO_DOMAINNAME}.auth.${REGION}.amazoncognito.com/oauth2
+P_COGNITO_AUTH_URL=https://${P_COGNITO_DOMAINNAME}.auth.${REGION}.amazoncognito.com/oauth2/authorize
+P_COGNITO_TOKEN_URL=https://${P_COGNITO_DOMAINNAME}.auth.${REGION}.amazoncognito.com/oauth2/token
+
+# cognito tokens (populated after login)
+$(eval O_COGNITO_ID_TOKEN=$(shell cat tmp/cognito_login.json | jq -r '.AuthenticationResult.IdToken'))
+$(eval O_COGNITO_ACCESS_TOKEN=$(shell cat tmp/cognito_login.json | jq -r '.AuthenticationResult.AccessToken'))
+
+# api gateway configuration
+P_API_BASEPATH=target
+P_API_STAGE=dev
+P_FN_MEMORY=128
+P_FN_TIMEOUT=15
+P_AUTHORIZER_ID=your-authorizer-id
+APIGW_STACK=agentcore-gateway-targets
+APIGW_TEMPLATE=iac/apigw.yaml
+APIGW_OUTPUT=iac/apigw_output.yaml
+APIGW_PARAMS="ParameterKey=apiDomainName,ParameterValue=${P_DOMAINNAME} ParameterKey=apiBasePath,ParameterValue=${P_API_BASEPATH} ParameterKey=apiStage,ParameterValue=${P_API_STAGE} ParameterKey=fnMemory,ParameterValue=${P_FN_MEMORY} ParameterKey=fnTimeout,ParameterValue=${P_FN_TIMEOUT} ParameterKey=cognitoUserPoolId,ParameterValue=${O_COGNITO_USERPOOL} ParameterKey=authorizerId,ParameterValue=${P_AUTHORIZER_ID}"
+O_API_ENDPOINT=https://your-api-id.execute-api.${REGION}.amazonaws.com/${P_API_STAGE}
+O_FN_API=output-api-function-name
+O_FN_AUTH=output-authorizer-function-name
+O_FN_AGENTCORE=output-agentcore-function-name
+O_API_ENDPOINT=https://${P_DOMAINNAME}/${P_API_BASEPATH}
+
+# agentcore gateway configuration
+GATEWAY_NAME=agentcore-with-api-gateway-and-lambda
+GATEWAY_DESCRIPTION=AgentCore with API Gateway and Lambda
+GATEWAY_EXECUTION_ROLE=${O_GATEWAY_ROLE_ARN}
+AUTHORIZER_CONFIGURATION='{"customJWTAuthorizer":{"discoveryUrl":"${P_COGNITO_DISCOVERY_URL}","allowedClients":["${O_COGNITO_CLIENTID}"]}}'
+CREDENTIAL_PROVIDER_CONFIGURATION='{"discovery_url":"${P_COGNITO_DISCOVERY_URL}","client_id":"${O_COGNITO_CLIENTID}","client_secret":"${O_COGNITO_CLIENTSECRET}"}'
+TARGET_NAME=api-gateway
+TARGET_DESCRIPTION=API Gateway target for AgentCore Gateway
+OPENAPI_FILE=iac/openapi.yaml
+CREDENTIAL_PROVIDER_NAME=custom-apikey-provider
+CREDENTIAL_PROVIDER_INPUTS='{"provider_name":"${CREDENTIAL_PROVIDER_NAME}","api_key":"allow"}'
+
+# agentcore gateway outputs (populated after deployment)
+O_GATEWAY_ID=output-gateway-id
+O_TARGET_ID=output-target-id
+O_GATEWAY_URL=https://${O_GATEWAY_ID}.gateway.bedrock-agentcore.${REGION}.amazonaws.com/mcp
+
+# agent configuration
+export AGENT_NAME=agent-connecting-to-agentcore-gateway
+export GATEWAY_URL=${O_GATEWAY_URL}
+export ACCESS_TOKEN=${O_COGNITO_ACCESS_TOKEN}
+export ID_TOKEN=${O_COGNITO_ID_TOKEN}
+
+# otel configuration
+export OTEL_METRICS_EXPORTER=none
+export OTEL_TRACES_EXPORTER=none
+export OTEL_LOGS_EXPORTER=none
+export OTEL_RESOURCE_DETECTORS=none
+
+# platform configuration: linux/amd64 | linux/arm64
+PLATFORM_DEPLOY=linux/arm64
+PLATFORM_LOCAL=linux/arm64
+HOST_PORT=8080
+CONTAINER_PORT=8080
