@@ -61,7 +61,7 @@ lambda.invoke.async:
 curl.apigw:
 	curl -s -X POST ${O_API_ENDPOINT} -H "Content-Type: application/json" -d '{"prompt": "What is VO2 max? What is the best way to improve it?"}' | jq 'del(.multiValueHeaders)'
 curl.apigw.auth:
-	curl -s -X POST ${O_API_ENDPOINT} -H "Content-Type: application/json" -H "Authorization: Bearer ${O_COGNITO_ACCESS_TOKEN}" -d '{"prompt": "What is VO2 max? What is the best way to improve it?"}' | jq 'del(.multiValueHeaders)'
+	curl -s -X POST ${O_API_ENDPOINT} -H "Content-Type: application/json" -H "Authorization: Bearer ${O_COGNITO_ID_TOKEN}" -d '{"prompt": "What is VO2 max? What is the best way to improve it?"}' | jq 'del(.multiValueHeaders)'
 
 # optional flags
 ENV_VARS_FLAG := $(if $(strip $(ENV_VARS)),--env-vars ${ENV_VARS},)
@@ -71,8 +71,14 @@ AUTHORIZE_FLAG := $(if $(strip $(AUTHORIZER_CONFIGURATION)),--authorizer-configu
 agentcore.gateway.create:
 	uv run iac/deploy_gateway.py --action gateway.create --gateway-name ${GATEWAY_NAME} --gateway-description '${GATEWAY_DESCRIPTION}' --execution-role ${GATEWAY_EXECUTION_ROLE} ${AUTHORIZE_FLAG}
 agentcore.gateway.update:
-	uv run iac/deploy_gateway.py --action gateway.update --gateway-id ${GATEWAY_ID} --gateway-name ${GATEWAY_NAME} --gateway-description '${GATEWAY_DESCRIPTION}' --execution-role ${GATEWAY_EXECUTION_ROLE} ${AUTHORIZE_FLAG}
+	uv run iac/deploy_gateway.py --action gateway.update --gateway-id ${O_GATEWAY_ID} --gateway-name ${GATEWAY_NAME} --gateway-description '${GATEWAY_DESCRIPTION}' --execution-role ${GATEWAY_EXECUTION_ROLE} ${AUTHORIZE_FLAG}
 agentcore.target.create:
-	uv run iac/deploy_gateway.py --action target.create --gateway-id ${GATEWAY_ID} --target-name ${TARGET_NAME} --target-description '${TARGET_DESCRIPTION}' --openapi-file ${OPENAPI_FILE} --credential-provider-inputs ${CREDENTIAL_PROVIDER_INPUTS}
+	uv run iac/deploy_gateway.py --action target.create --gateway-id ${O_GATEWAY_ID} --target-name ${TARGET_NAME} --target-description '${TARGET_DESCRIPTION}' --openapi-file ${OPENAPI_FILE} --credential-provider-inputs ${CREDENTIAL_PROVIDER_INPUTS}
 agentcore.target.update:
-	uv run iac/deploy_gateway.py --action target.update --gateway-id ${GATEWAY_ID} --target-id ${TARGET_ID}  --target-name ${TARGET_NAME} --target-description '${TARGET_DESCRIPTION}' --openapi-file ${OPENAPI_FILE} --credential-provider-inputs ${CREDENTIAL_PROVIDER_INPUTS}
+	uv run iac/deploy_gateway.py --action target.update --gateway-id ${O_GATEWAY_ID} --target-id ${O_TARGET_ID}  --target-name ${TARGET_NAME} --target-description '${TARGET_DESCRIPTION}' --openapi-file ${OPENAPI_FILE} --credential-provider-inputs ${CREDENTIAL_PROVIDER_INPUTS}
+
+# local testing
+local.agent:
+	uv run agent/app_strands.py
+local.test:
+	curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"id_token": "${O_COGNITO_ID_TOKEN}", "prompt": "Get me a list of users that registered with this application."}'

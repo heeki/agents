@@ -95,9 +95,7 @@ class AgentCoreGateway:
 
     def _configure_credential_provider_params(self,
         provider_name: str = "",
-        issuer_url: str = "",
-        authorization_endpoint: str = "",
-        token_endpoint: str = "",
+        discovery_url: str = "",
         client_id: str = "",
         client_secret: str = ""
     ):
@@ -107,12 +105,7 @@ class AgentCoreGateway:
             'oauth2ProviderConfigInput': {
                 'customOauth2ProviderConfig': {
                     'oauthDiscovery': {
-                        'authorizationServerMetadata': {
-                            'issuer': issuer_url,
-                            'authorizationEndpoint': authorization_endpoint,
-                            'tokenEndpoint': token_endpoint,
-                            'responseTypes': ['token']
-                        }
+                        'discoveryUrl': discovery_url
                     },
                     'clientId': client_id,
                     'clientSecret': client_secret
@@ -132,6 +125,7 @@ class AgentCoreGateway:
         try:
             params = self._configure_credential_provider_params(**credential_provider_inputs)
             logging.info(json.dumps(params, indent=4, cls=DateTimeEncoder))
+            # response = self.client_agentcore_cp.delete_oauth2_credential_provider(name=credential_provider_inputs['provider_name'])
             response = self.client_agentcore_cp.create_oauth2_credential_provider(**params)
             return response['credentialProviderArn']
         except ClientError as e:
