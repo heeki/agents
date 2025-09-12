@@ -93,7 +93,7 @@ class AgentCoreGateway:
             logging.error(f"Error updating agent gateway: {e}")
             raise e
 
-    def _configure_credential_provider_params(self,
+    def _configure_oauth2_credential_provider_params(self,
         provider_name: str = "",
         discovery_url: str = "",
         client_id: str = "",
@@ -114,16 +114,33 @@ class AgentCoreGateway:
         }
         return params
 
-    def find_credential_provider_by_name(self, provider_name: str):
+    def _configure_apikey_credential_provider_params(self,
+        provider_name: str = "",
+        api_key: str = ""
+    ):
+        params = {
+            'name': provider_name,
+            'apiKey': api_key,
+        }
+        return params
+
+    def find_oauth2_credential_provider_by_name(self, provider_name: str):
         list_response = self.client_agentcore_cp.list_oauth2_credential_providers()
         credential_provider = [provider for provider in list_response['credentialProviders'] if provider['name'] == provider_name]
         if len(credential_provider) > 0:
             return credential_provider[0]
         return None
 
-    def create_credential_provider(self, credential_provider_inputs: dict = {}):
+    def find_apikey_credential_provider_by_name(self, provider_name: str):
+        list_response = self.client_agentcore_cp.list_api_key_credential_providers()
+        credential_provider = [provider for provider in list_response['credentialProviders'] if provider['name'] == provider_name]
+        if len(credential_provider) > 0:
+            return credential_provider[0]
+        return None
+
+    def create_oauth2_credential_provider(self, credential_provider_inputs: dict = {}):
         try:
-            params = self._configure_credential_provider_params(**credential_provider_inputs)
+            params = self._configure_oauth2_credential_provider_params(**credential_provider_inputs)
             logging.info(json.dumps(params, indent=4, cls=DateTimeEncoder))
             # response = self.client_agentcore_cp.delete_oauth2_credential_provider(name=credential_provider_inputs['provider_name'])
             response = self.client_agentcore_cp.create_oauth2_credential_provider(**params)
@@ -133,12 +150,28 @@ class AgentCoreGateway:
             if "already exists" in error_message:
                 # Get existing credential provider ARN
                 response = self.client_agentcore_cp.list_oauth2_credential_providers()
-                credential_provider = self.find_credential_provider_by_name(credential_provider_inputs['provider_name'])
+                credential_provider = self.find_oauth2_credential_provider_by_name(credential_provider_inputs['provider_name'])
                 return credential_provider['credentialProviderArn']
             logging.error(f"Error creating credential provider: {e}")
             raise e
 
-    def _configure_credential_provider_configurations(self, credential_provider_arn: str):
+    def create_apikey_credential_provider(self, credential_provider_inputs: dict = {}):
+        try:
+            params = self._configure_apikey_credential_provider_params(**credential_provider_inputs)
+            logging.info(json.dumps(params, indent=4, cls=DateTimeEncoder))
+            response = self.client_agentcore_cp.create_api_key_credential_provider(**params)
+            return response['credentialProviderArn']
+        except ClientError as e:
+            error_message = e.response['Error']['Message']
+            if "already exists" in error_message:
+                # Get existing credential provider ARN
+                response = self.client_agentcore_cp.list_api_key_credential_providers()
+                credential_provider = self.find_apikey_credential_provider_by_name(credential_provider_inputs['provider_name'])
+                return credential_provider['credentialProviderArn']
+            logging.error(f"Error creating credential provider: {e}")
+            raise e
+
+    def _configure_oauth2_credential_provider_configurations(self, credential_provider_arn: str):
         return [
             {
                 'credentialProviderType': 'OAUTH',
@@ -151,6 +184,20 @@ class AgentCoreGateway:
             }
         ]
 
+    def _configure_apikey_credential_provider_configurations(self, credential_provider_arn: str):
+        return [
+            {
+                'credentialProviderType': 'API_KEY',
+                'credentialProvider': {
+                    'apiKeyCredentialProvider': {
+                        'providerArn': credential_provider_arn,
+                        'credentialParameterName': 'Authorization',
+                        'credentialLocation': 'HEADER'
+                    }
+                }
+            }
+        ]
+
     def _configure_gateway_target_params(self, target_type: str, openapi_specification: dict = {}):
         params = {
             'mcp': {}
@@ -158,40 +205,6 @@ class AgentCoreGateway:
         if target_type == "openApiSchema":
             params['mcp']['openApiSchema'] = {
                 'inlinePayload': json.dumps(openapi_specification)
-            }
-        elif target_type == 'lambda':
-            params['mcp']['lambda'] = {
-                'lambdaArn': '',
-                'toolSchema': {
-                    'inlinePayload': [
-                        {
-                            'name': 'string',
-                            'description': 'string',
-                            'inputSchema': {
-                                'type': 'string'|'number'|'object'|'array'|'boolean'|'integer',
-                                'properties': {
-                                    'string': {'... recursive ...'}
-                                },
-                                'required': [
-                                    'string',
-                                ],
-                                'items': {'... recursive ...'},
-                                'description': 'string'
-                            },
-                            'outputSchema': {
-                                'type': 'string'|'number'|'object'|'array'|'boolean'|'integer',
-                                'properties': {
-                                    'string': {'... recursive ...'}
-                                },
-                                'required': [
-                                    'string',
-                                ],
-                                'items': {'... recursive ...'},
-                                'description': 'string'
-                            }
-                        },
-                    ]
-                }
             }
         return params
 
@@ -207,8 +220,10 @@ class AgentCoreGateway:
                 openapi_specification = yaml.safe_load(f)
             target_configuration = self._configure_gateway_target_params("openApiSchema", openapi_specification)
             logging.info(json.dumps(target_configuration, indent=4, cls=DateTimeEncoder))
-            credential_provider_arn = self.create_credential_provider(credential_provider_inputs)
-            credential_provider_configurations = self._configure_credential_provider_configurations(credential_provider_arn)
+            # credential_provider_arn = self.create_oauth2_credential_provider(credential_provider_inputs)
+            # credential_provider_configurations = self._configure_oauth2_credential_provider_configurations(credential_provider_arn)
+            credential_provider_arn = self.create_apikey_credential_provider(credential_provider_inputs)
+            credential_provider_configurations = self._configure_apikey_credential_provider_configurations(credential_provider_arn)
             logging.info(json.dumps(credential_provider_configurations, indent=4, cls=DateTimeEncoder))
             response = self.client_agentcore_cp.create_gateway_target(
                 gatewayIdentifier=gateway_id,
@@ -241,8 +256,10 @@ class AgentCoreGateway:
                 openapi_specification = yaml.safe_load(f)
             target_configuration = self._configure_gateway_target_params("openApiSchema", openapi_specification)
             logging.info(json.dumps(target_configuration, indent=4, cls=DateTimeEncoder))
-            credential_provider_arn = self.create_credential_provider(credential_provider_inputs)
-            credential_provider_configurations = self._configure_credential_provider_configurations(credential_provider_arn)
+            # credential_provider_arn = self.create_oauth2_credential_provider(credential_provider_inputs)
+            # credential_provider_configurations = self._configure_oauth2_credential_provider_configurations(credential_provider_arn)
+            credential_provider_arn = self.create_apikey_credential_provider(credential_provider_inputs)
+            credential_provider_configurations = self._configure_apikey_credential_provider_configurations(credential_provider_arn)
             logging.info(json.dumps(credential_provider_configurations, indent=4, cls=DateTimeEncoder))
             response = self.client_agentcore_cp.update_gateway_target(
                 gatewayIdentifier=gateway_id,

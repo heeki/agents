@@ -23,6 +23,8 @@ Parameters:
     Type: Number
   cognitoUserPoolId:
     Type: String
+  authorizerId:
+    Type: String
 Resources:
   # APIGW
   Api:
@@ -109,6 +111,28 @@ Resources:
       Principal: apigateway.amazonaws.com
       Action: lambda:InvokeFunction
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${Api}/*/*/*'
+  FnAuth:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../src/authorizer
+      Handler: fn.handler
+      Role: !GetAtt FnRole.Arn
+      Tags:
+        application:group: agentcore
+        application:subgroup: apigw
+        application:owner: heeki
+  FnAuthLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${FnAuth}'
+      RetentionInDays: 7
+  FnAuthPerm:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt FnAuth.Arn
+      Principal: apigateway.amazonaws.com
+      Action: lambda:InvokeFunction
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${Api}/authorizers/${authorizerId}'
   FnAgentCore:
     Type: AWS::Serverless::Function
     Properties:

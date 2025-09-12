@@ -60,8 +60,10 @@ lambda.invoke.async:
 	aws --profile ${PROFILE} lambda invoke --function-name ${O_FN} --invocation-type Event --payload file://etc/event.json --cli-binary-format raw-in-base64-out --log-type Tail tmp/fn.json | jq "."
 curl.apigw:
 	curl -s -X POST ${O_API_ENDPOINT} -H "Content-Type: application/json" -d '{"prompt": "What is VO2 max? What is the best way to improve it?"}' | jq 'del(.multiValueHeaders)'
-curl.apigw.auth:
-	curl -s -X POST ${O_API_ENDPOINT} -H "Content-Type: application/json" -H "Authorization: Bearer ${O_COGNITO_ID_TOKEN}" -d '{"prompt": "What is VO2 max? What is the best way to improve it?"}' | jq 'del(.multiValueHeaders)'
+curl.apigw.cognito:
+	curl -s -X POST ${O_API_ENDPOINT} -H "Content-Type: application/json" -H "Authorization: Bearer ${O_COGNITO_ID_TOKEN}" -d '{"prompt": "Give me a list of users in my network."}' | jq
+curl.apigw.apikey:
+	curl -s -X POST ${O_API_ENDPOINT} -H "Content-Type: application/json" -H "Authorization: allow" -d '{"prompt": "Give me a list of users in my network."}' | jq
 
 # optional flags
 ENV_VARS_FLAG := $(if $(strip $(ENV_VARS)),--env-vars ${ENV_VARS},)
@@ -81,4 +83,4 @@ agentcore.target.update:
 local.agent:
 	uv run agent/app_strands.py
 local.test:
-	curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"id_token": "${O_COGNITO_ID_TOKEN}", "prompt": "Get me a list of users that registered with this application."}'
+	curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"id_token": "${O_COGNITO_ID_TOKEN}", "prompt": "Give me a list of users in my network."}'

@@ -57,7 +57,7 @@ components:
             code: 500
             message: "unable to retrieve message"
   securitySchemes:
-    cognitoAuthorizer:
+    cognito-authorizer:
       type: apiKey
       name: Authorization
       in: header
@@ -67,6 +67,17 @@ components:
         providerARNs:
           - Fn::Sub: "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${cognitoUserPoolId}"
         identitySource: method.request.header.Authorization
+    api-key-authorizer:
+      type: apiKey
+      name: Authorization
+      in: header
+      x-amazon-apigateway-authtype: custom
+      x-amazon-apigateway-authorizer:
+        authorizerUri:
+          Fn::Sub: 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FnAuth.Arn}/invocations'
+        authorizerResultTtlInSeconds: 0
+        identitySource: method.request.header.Authorization
+        type: request
 
 paths:
   /:
@@ -87,7 +98,8 @@ paths:
         default:
           $ref: "#/components/responses/error"
       security:
-        - cognitoAuthorizer: []
+        # - cognito-authorizer: []
+        - api-key-authorizer: []
       x-amazon-apigateway-integration:
         httpMethod: POST
         payloadFormatVersion: "1.0"
@@ -130,7 +142,8 @@ paths:
         default:
           $ref: "#/components/responses/error"
       security:
-        - cognitoAuthorizer: []
+        # - cognito-authorizer: []
+        - api-key-authorizer: []
       x-amazon-apigateway-integration:
         httpMethod: POST
         payloadFormatVersion: "1.0"
