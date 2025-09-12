@@ -68,7 +68,11 @@ ENV_VARS_FLAG := $(if $(strip $(ENV_VARS)),--env-vars ${ENV_VARS},)
 AUTHORIZE_FLAG := $(if $(strip $(AUTHORIZER_CONFIGURATION)),--authorizer-configuration ${AUTHORIZER_CONFIGURATION},)
 
 # agentcore
-agentcore.create:
-	uv run iac/deploy_gateway.py --action create --gateway-name ${GATEWAY_NAME} --description '${GATEWAY_DESCRIPTION}' --execution-role ${GATEWAY_EXECUTION_ROLE} ${AUTHORIZE_FLAG}
-agentcore.update:
-	uv run iac/deploy_gateway.py --action update --gateway-id ${GATEWAY_ID} --gateway-name ${GATEWAY_NAME} --description '${GATEWAY_DESCRIPTION}' --execution-role ${GATEWAY_EXECUTION_ROLE} ${AUTHORIZE_FLAG}
+agentcore.gateway.create:
+	uv run iac/deploy_gateway.py --action gateway.create --gateway-name ${GATEWAY_NAME} --gateway-description '${GATEWAY_DESCRIPTION}' --execution-role ${GATEWAY_EXECUTION_ROLE} ${AUTHORIZE_FLAG}
+agentcore.gateway.update:
+	uv run iac/deploy_gateway.py --action gateway.update --gateway-id ${GATEWAY_ID} --gateway-name ${GATEWAY_NAME} --gateway-description '${GATEWAY_DESCRIPTION}' --execution-role ${GATEWAY_EXECUTION_ROLE} ${AUTHORIZE_FLAG}
+agentcore.target.create:
+	uv run iac/deploy_gateway.py --action target.create --gateway-id ${GATEWAY_ID} --target-name ${TARGET_NAME} --target-description '${TARGET_DESCRIPTION}' --openapi-file ${OPENAPI_FILE} --credential-provider-inputs ${CREDENTIAL_PROVIDER_INPUTS}
+agentcore.target.update:
+	uv run iac/deploy_gateway.py --action target.update --gateway-id ${GATEWAY_ID} --target-id ${TARGET_ID}  --target-name ${TARGET_NAME} --target-description '${TARGET_DESCRIPTION}' --openapi-file ${OPENAPI_FILE} --credential-provider-inputs ${CREDENTIAL_PROVIDER_INPUTS}
