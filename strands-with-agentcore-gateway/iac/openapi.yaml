@@ -1,6 +1,6 @@
 openapi: 3.0.1
 servers:
-  - url: https://target.heeki.cloud
+  - url: https://agentcore.heeki.cloud/target
 
 info:
   title: apigw-agentcore-gateway

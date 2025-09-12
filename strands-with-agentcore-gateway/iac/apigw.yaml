@@ -11,6 +11,10 @@ Globals:
     Runtime: python3.12
     Timeout: !Ref fnTimeout
 Parameters:
+  apiDomainName:
+    Type: String
+  apiBasePath:
+    Type: String
   apiStage:
     Type: String
   fnMemory:
@@ -40,6 +44,16 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/apigateway/apigw-agentcore-gateway-${Api}"
       RetentionInDays: 7
+  ApiMapping:
+    DependsOn: Api
+    Type: AWS::ApiGateway::BasePathMapping
+    Properties:
+      RestApiId: !Ref Api
+      BasePath: !Ref apiBasePath
+      DomainName: !Ref apiDomainName
+      Stage: !Ref apiStage
+    DependsOn:
+      - ApiStage
   # Lambda
   FnRole:
     Type: AWS::IAM::Role

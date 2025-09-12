@@ -2,9 +2,38 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: Infrastructure for AgentCore test agent application
 Transform: AWS::Serverless-2016-10-31
 Parameters:
+  domainName:
+    Type: String
+  hostedZoneId:
+    Type: String
   repositoryName:
     Type: String
 Resources:
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref domainName
+      DomainValidationOptions:
+        - DomainName: !Ref domainName
+          HostedZoneId: !Ref hostedZoneId
+      ValidationMethod: DNS
+  Domain:
+    Type: AWS::ApiGateway::DomainName
+    Properties:
+      DomainName: !Ref domainName
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      RegionalCertificateArn: !Ref Certificate
+  DomainRecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref hostedZoneId
+      Name: !Ref domainName
+      Type: A
+      AliasTarget:
+        HostedZoneId: !GetAtt Domain.RegionalHostedZoneId
+        DNSName: !GetAtt Domain.RegionalDomainName
   Repository:
     Type: AWS::ECR::Repository
     Properties:
@@ -124,6 +153,8 @@ Resources:
                 Resource:
                   - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:memory/*'
 Outputs:
+  outCertificateArn:
+    Value: !Ref Certificate
   outRepository:
     Value: !Ref Repository
   outRepositoryArn:
