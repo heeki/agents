@@ -1,0 +1,13 @@
+FROM --platform=linux/arm64 ghcr.io/astral-sh/uv:python3.13-alpine
+WORKDIR /agent
+
+COPY ./agent /agent
+COPY ./requirements.txt /agent/requirements.txt
+RUN apk add --no-cache --virtual .build-deps build-base python3-dev linux-headers
+RUN pip install -r /agent/requirements.txt --upgrade --no-cache-dir --root-user-action=ignore
+RUN apk del .build-deps
+
+ENV PYTHONPATH /agent
+EXPOSE 8080
+
+CMD ["uv", "run", "/agent/app.py"]

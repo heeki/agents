@@ -1,0 +1,7 @@
+aws-opentelemetry-distro>=0.12.1
+bedrock-agentcore==0.1.5
+boto3==1.40.40
+fastapi==0.118.0
+langfuse==3.5.2
+mcp==1.15.0
+strands-agents==1.10.0

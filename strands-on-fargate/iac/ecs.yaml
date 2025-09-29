@@ -1,0 +1,152 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Strands resources for ECS Fargate deployment
+Parameters:
+  desiredCount:
+    Type: String
+  albArn:
+    Type: String
+  targetGroupArn:
+    Type: String
+  taskSGroup:
+    Type: String
+  subnetIds:
+    Type: List<String>
+  imageUri:
+    Type: String
+  logGroup:
+    Type: String
+  exampleEnvVarValue:
+    Type: String
+Resources:
+  ExecRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: '/'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: '/'
+      Policies:
+        - PolicyName: cloudwatch-logs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: 'arn:aws:logs:*:*:log-group:*:*'
+        - PolicyName: bedrock
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0'
+                  - !Sub 'arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0'
+                  - !Sub 'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0'
+                  - !Sub 'arn:aws:bedrock:us-east-1:${AWS::AccountId}:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0'
+                  - !Sub 'arn:aws:bedrock:us-east-2:${AWS::AccountId}:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0'
+                  - !Sub 'arn:aws:bedrock:us-west-2:${AWS::AccountId}:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0'
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      CapacityProviders:
+        - FARGATE
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref logGroup
+      RetentionInDays: 7
+  Task:
+    DependsOn: LogGroup
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: strands-on-fargate
+      ExecutionRoleArn: !GetAtt ExecRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      Cpu: 1024
+      Memory: 2048
+      NetworkMode: awsvpc
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      ContainerDefinitions:
+        - Name: strands_container
+          Image: !Ref imageUri
+          Environment:
+            - Name: EXAMPLE_ENVVAR
+              Value: !Ref exampleEnvVarValue
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref logGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: strands
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+      Tags:
+        - Key: application:group
+          Value: strands
+        - Key: application:subgroup
+          Value: ecs
+        - Key: application:owner
+          Value: heeki
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !GetAtt Cluster.Arn
+      DesiredCount: !Ref desiredCount
+      LaunchType: FARGATE
+      LoadBalancers:
+        - ContainerName: strands_container
+          ContainerPort: 8080
+          TargetGroupArn: !Ref targetGroupArn
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref taskSGroup
+          Subnets: !Ref subnetIds
+      TaskDefinition: !Ref Task
+      Tags:
+        - Key: application:group
+          Value: strands
+        - Key: application:subgroup
+          Value: ecs
+        - Key: application:owner
+          Value: heeki
+Outputs:
+  outCluster:
+    Value: !Ref Cluster
+  outTask:
+    Value: !Ref Task
+  outService:
+    Value: !Ref Service
