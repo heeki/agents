@@ -1,0 +1,22 @@
+# python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# virtual environments
+.venv
+
+# directories
+repl_state
+tmp
+
+# files
+build.toml
+etc/*.docker
+etc/*.sh
+*_output.yaml
+notes.md
+

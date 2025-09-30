@@ -1,0 +1,6 @@
+boto3==1.40.40
+fastapi==0.118.0
+pydantic==2.11.9
+strands-agents==1.10.0
+strands-agents-tools==0.2.9
+uvicorn==0.37.0

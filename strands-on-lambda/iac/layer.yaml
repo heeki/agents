@@ -1,0 +1,24 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Strands dependencies for Lambda
+Transform: AWS::Serverless-2016-10-31
+Parameters:
+  description:
+    Type: String
+Resources:
+  # Dependencies
+  LayerStrands:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      CompatibleRuntimes:
+        - python3.12
+        - python3.13
+      ContentUri: src
+      Description: !Ref description
+      LayerName: strands-python3
+    Metadata:
+      BuildMethod: python3.13
+      BuildProperties:
+        UseContainer: true
+Outputs:
+  outLayer:
+    Value: !Ref LayerStrands
