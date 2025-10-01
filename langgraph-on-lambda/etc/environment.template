@@ -1,0 +1,15 @@
+# aws configuration
+PROFILE=your-cli-profile
+BUCKET=your-cli-bucket
+REGION=us-east-1
+
+# api gateway stack
+P_API_STAGE=dev
+P_FN_MEMORY=128
+P_FN_TIMEOUT=60
+LAMBDA_STACK=langgraph-on-lambda
+LAMBDA_TEMPLATE=iac/template.yaml
+LAMBDA_OUTPUT=iac/template_output.yaml
+LAMBDA_PARAMS="ParameterKey=apiStage,ParameterValue=${P_API_STAGE} ParameterKey=fnMemory,ParameterValue=${P_FN_MEMORY} ParameterKey=fnTimeout,ParameterValue=${P_FN_TIMEOUT} ParameterKey=dependencies,ParameterValue=${O_LAYER_ARN}"
+O_FN=output-function-name
+O_API_ENDPOINT=output-api-endpoint

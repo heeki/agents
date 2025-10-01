@@ -1,0 +1,10 @@
+# directories
+node_modules
+tmp
+
+# files
+etc/*.docker
+etc/*.sh
+iac/*_output.yaml
+build.toml
+notes.md

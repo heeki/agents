@@ -1,0 +1,9 @@
+{
+  "httpMethod": "POST",
+  "path": "/langgraph",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"prompt\": \"What is VO2 max? What is the best way to improve it?\"}",
+  "isBase64Encoded": false
+}
