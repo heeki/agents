@@ -67,6 +67,12 @@ Resources:
                   - bedrock:InvokeModel
                   - bedrock:InvokeModelWithResponseStream
                 Resource:
+                  - !Sub 'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0'
+                  - !Sub 'arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-lite-v1:0'
+                  - !Sub 'arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-lite-v1:0'
+                  - !Sub 'arn:aws:bedrock:us-east-1:${AWS::AccountId}:inference-profile/us.amazon.nova-lite-v1:0'
+                  - !Sub 'arn:aws:bedrock:us-east-2:${AWS::AccountId}:inference-profile/us.amazon.nova-lite-v1:0'
+                  - !Sub 'arn:aws:bedrock:us-west-2:${AWS::AccountId}:inference-profile/us.amazon.nova-lite-v1:0'
                   - !Sub 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0'
                   - !Sub 'arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0'
                   - !Sub 'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0'

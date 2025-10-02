@@ -1,10 +1,12 @@
+import boto3
 import logging
 import os
+import uvicorn
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from pydantic import BaseModel
-import uvicorn
 from strands import Agent
+from strands.models import BedrockModel
 
 name = os.getenv("AGENT_NAME", "test")
 logging.getLogger(name).setLevel(logging.INFO)
@@ -14,7 +16,17 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 app = FastAPI(title="Strands on Fargate")
-agent = Agent()
+session = boto3.Session()
+model = BedrockModel(
+    model_id="us.anthropic.claude-sonnet-4-20250514-v1:0",
+    # model_id="us.amazon.nova-lite-v1:0",
+    max_tokens=1000,
+    temperature=0.5,
+    session=session
+)
+agent = Agent(
+    model=model
+)
 
 class PromptRequest(BaseModel):
     prompt: str
