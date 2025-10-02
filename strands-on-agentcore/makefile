@@ -73,14 +73,23 @@ local.mcp.client:
 inspector:
 	npx @modelcontextprotocol/inspector
 
+# agentcore iac deployment
+runtime: runtime.package runtime.deploy
+runtime.package:
+	sam package --profile ${PROFILE} --region ${REGION} -t ${RUNTIME_TEMPLATE} --output-template-file ${RUNTIME_OUTPUT} --s3-bucket ${BUCKET} --s3-prefix ${RUNTIME_STACK}
+runtime.deploy:
+	sam deploy --profile ${PROFILE} --region ${REGION} -t ${RUNTIME_OUTPUT} --stack-name ${RUNTIME_STACK} --parameter-overrides ${RUNTIME_PARAMS} --capabilities CAPABILITY_NAMED_IAM
+runtime.delete:
+	sam delete --stack-name ${RUNTIME_STACK}
+
 # optional flags
 ENV_VARS_FLAG := $(if $(strip $(ENV_VARS)),--env-vars ${ENV_VARS},)
 AUTHORIZE_FLAG := $(if $(strip $(AUTHORIZER_CONFIGURATION)),--authorizer-configuration ${AUTHORIZER_CONFIGURATION},)
 
-# agentcore
+# agentcore scripted deployment
 agentcore.create:
 	uv run iac/deploy.py --action create --runtime-name ${AGENT_NAME} --ecr-repo-uri ${C_REPO_URI} --execution-role ${EXECUTION_ROLE} --server-protocol ${SERVER_PROTOCOL} ${ENV_VARS_FLAG} ${AUTHORIZE_FLAG}
 agentcore.update:
 	uv run iac/deploy.py --action update --runtime-id ${O_AGENT_ID} --ecr-repo-uri ${C_REPO_URI} --execution-role ${EXECUTION_ROLE} --server-protocol ${SERVER_PROTOCOL} ${ENV_VARS_FLAG} ${AUTHORIZE_FLAG}
 agentcore.invoke:
-	uv run iac/deploy.py --action invoke --agent-arn ${O_AGENT_ARN} --agent-version ${O_AGENT_VERSION} --prompt ${P_PROMPT}
+	uv run iac/deploy.py --action invoke --agent-arn ${O_AGENT_ARN} --agent-version ${O_AGENT_QUALIFIER} --prompt ${P_PROMPT}

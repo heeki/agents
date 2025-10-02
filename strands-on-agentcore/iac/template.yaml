@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AgentCore Runtime resources
+Transform: AWS::Serverless-2016-10-31
+Parameters:
+  agentName:
+    Type: String
+  containerUri:
+    Type: String
+  roleArn:
+    Type: String
+  networkConfiguration:
+    Type: String
+  protocolConfiguration:
+    Type: String
+  allowedClients:
+    Type: List<String>
+    Default: ""
+  discoveryUrl:
+    Type: String
+    Default: ""
+  langfuseHost:
+    Type: String
+    Default: ""
+  langfusePublicKey:
+    Type: String
+    Default: ""
+  langfuseSecretKey:
+    Type: String
+    Default: ""
+Conditions:
+  HasAuthorizerConfig: !And
+    - !Not [!Equals [!Join ["", !Ref allowedClients], ""]]
+    - !Not [!Equals [!Ref discoveryUrl, ""]]
+  HasEnvironmentVariables: !Or
+    - !Not [!Equals [!Ref langfuseHost, ""]]
+    - !Not [!Equals [!Ref langfusePublicKey, ""]]
+    - !Not [!Equals [!Ref langfuseSecretKey, ""]]
+Resources:
+  AgentCoreRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: !Ref agentName
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Ref containerUri
+      RoleArn: !Ref roleArn
+      NetworkConfiguration:
+        NetworkMode: !Ref networkConfiguration
+      ProtocolConfiguration: !Ref protocolConfiguration
+      AuthorizerConfiguration: !If
+        - HasAuthorizerConfig
+        - CustomJWTAuthorizer:
+            AllowedClients: !Ref allowedClients
+            DiscoveryUrl: !Ref discoveryUrl
+        - !Ref "AWS::NoValue"
+      EnvironmentVariables: !If
+        - HasEnvironmentVariables
+        - LANGFUSE_HOST: !Ref langfuseHost
+          LANGFUSE_PUBLIC_KEY: !Ref langfusePublicKey
+          LANGFUSE_SECRET_KEY: !Ref langfuseSecretKey
+        - !Ref "AWS::NoValue"
+      Tags:
+        'application:group': agentcore
+        'application:subgroup': agentcore-runtime
+        'application:owner': heeki
+Outputs:
+  outAgentArn:
+    Value: !GetAtt AgentCoreRuntime.AgentRuntimeArn
+  outAgentId:
+    Value: !GetAtt AgentCoreRuntime.AgentRuntimeId
+  outAgentVersion:
+    Value: !GetAtt AgentCoreRuntime.AgentRuntimeVersion
