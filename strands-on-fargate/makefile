@@ -30,7 +30,7 @@ podman.prune:
 local.agent:
 	uv run agent/app.py
 local.test:
-	curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"prompt": "${P_PROMPT}"}'
+	curl -X POST -H "Content-Type: application/json" -d @etc/prompt.json http://localhost:8080/invocations
 
 # ecs cluster and service
 ecs: ecs.package ecs.deploy
@@ -41,4 +41,4 @@ ecs.deploy:
 
 # ecs testing
 ecs.test:
-	curl -X POST https://${P_DOMAINNAME}/invocations -H "Content-Type: application/json" -d '{"prompt": "${P_PROMPT}"}'	
+	curl -X POST -H "Content-Type: application/json" -d @etc/prompt.json https://${P_DOMAINNAME}/invocations
