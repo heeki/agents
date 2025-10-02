@@ -17,8 +17,6 @@ Parameters:
     Type: Number
   fnTimeout:
     Type: Number
-  dependencies:
-    Type: String
 Resources:
   # APIGW
   Api:
@@ -100,10 +98,10 @@ Resources:
                   - !Sub 'arn:aws:bedrock:us-east-1:${AWS::AccountId}:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0'
                   - !Sub 'arn:aws:bedrock:us-east-2:${AWS::AccountId}:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0'
                   - !Sub 'arn:aws:bedrock:us-west-2:${AWS::AccountId}:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0'
-  Fn:
+  FnBuffered:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../src
+      CodeUri: ../src/buffered
       Handler: fn.handler
       Role: !GetAtt FnRole.Arn
       Tags:
@@ -113,12 +111,34 @@ Resources:
   FnLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub '/aws/lambda/${Fn}'
+      LogGroupName: !Sub '/aws/lambda/${FnBuffered}'
       RetentionInDays: 7
   FnPerm:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !GetAtt Fn.Arn
+      FunctionName: !GetAtt FnBuffered.Arn
+      Principal: apigateway.amazonaws.com
+      Action: lambda:InvokeFunction
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${Api}/*/*/*'
+  FnStreaming:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../src/streaming
+      Handler: fn.handler
+      Role: !GetAtt FnRole.Arn
+      Tags:
+        application:group: langgraph-on-lambda
+        application:subgroup: lambda
+        application:owner: heeki
+  FnStreamingLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${FnStreaming}'
+      RetentionInDays: 7
+  FnStreamingPerm:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt FnStreaming.Arn
       Principal: apigateway.amazonaws.com
       Action: lambda:InvokeFunction
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${Api}/*/*/*'
@@ -127,5 +147,7 @@ Outputs:
     Value: !Ref Api
   outApiEndpoint:
     Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com/${apiStage}'
-  outFn:
-    Value: !Ref Fn
+  outFnBuffered:
+    Value: !Ref FnBuffered
+  outFnStreaming:
+    Value: !Ref FnStreaming

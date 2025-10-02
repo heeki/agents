@@ -11,12 +11,12 @@ lambda.delete:
 
 # local agent
 local.agent:
-	npx tsx src/agent.mts
+	npx tsx src/agent/agent.mts
 
 # local testing
 local.invoke:
-	sam build --profile ${PROFILE} --template ${LAMBDA_TEMPLATE} --parameter-overrides ${LAMBDA_PARAMS} --build-dir build --use-container
-	sam local invoke -t build/template.yaml --parameter-overrides ${LAMBDA_PARAMS} --env-vars etc/envvars.json -e etc/event.json Fn | jq
+	# sam build --profile ${PROFILE} --template ${LAMBDA_TEMPLATE} --parameter-overrides ${LAMBDA_PARAMS} --build-dir build --use-container
+	sam local invoke -t ${LAMBDA_TEMPLATE} --parameter-overrides ${LAMBDA_PARAMS} --env-vars etc/envvars.json -e etc/event.json FnBuffered | jq
 
 # lambda testing
 lambda.invoke.sync:
@@ -27,7 +27,7 @@ lambda.invoke.async:
 	aws --profile ${PROFILE} lambda invoke --function-name ${O_FN} --invocation-type Event --payload file://etc/event.json --cli-binary-format raw-in-base64-out --log-type Tail tmp/fn.json | jq "."
 
 # api testing
-curl.sync:
+curl.buffered:
+	curl -X POST -H "Content-Type: application/json" -d @etc/prompt.json ${O_API_ENDPOINT}/langgraph-buffered --no-buffer
+curl.streaming:
 	curl -X POST -H "Content-Type: application/json" -d @etc/prompt.json ${O_API_ENDPOINT}/langgraph --no-buffer
-curl.stream:
-	curl -X POST -H "Content-Type: application/json" -d @etc/prompt.json ${O_API_ENDPOINT}/langgraph-streaming --no-buffer

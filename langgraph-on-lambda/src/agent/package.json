@@ -1,0 +1,20 @@
+{
+  "name": "agent",
+  "version": "0.0.1",
+  "description": "standalone langgraph agent",
+  "license": "MIT",
+  "author": "heeki",
+  "type": "module",
+  "main": "agent.mts",
+  "scripts": {
+    "test": "echo"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.901.0",
+    "@langchain/aws": "^0.1.15",
+    "@langchain/community": "^0.3.57",
+    "@langchain/core": "^0.3.78",
+    "@langchain/langgraph": "^0.4.9",
+    "@langchain/tavily": "^0.1.5"
+  }
+}

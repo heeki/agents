@@ -25,17 +25,6 @@ function parseBase64(message) {
   return JSON.parse(Buffer.from(message, "base64").toString("utf-8"));
 }
 
-// handle synchronous
-async function handleSynchronous(prompt) {
-  try {
-    const response = await agent.invoke({ messages: [new HumanMessage(prompt)] });
-    return response.content;
-  } catch (error) {
-    console.error(`ERROR: Can't invoke '${modelId}'. Reason: ${error.message}`);
-    return `Error: ${error.message}`;
-  }
-}
-
 // handle streaming
 async function handleStreaming(responseStream, prompt) {
   try {
@@ -82,7 +71,7 @@ async function handleStreaming(responseStream, prompt) {
   }
 }
 
-// lambda handler
+// streaming lambda handler
 export const handler = awslambda.streamifyResponse(
   async (event, responseStream, context) => {
     console.log(JSON.stringify(event));
@@ -101,14 +90,6 @@ export const handler = awslambda.streamifyResponse(
 
     // get the prompt from the request body with fallback
     const prompt = body?.prompt || body?.text || body?.message || "Describe the purpose of a 'hello world' program in one paragraph";
-
-    switch (event.path) {
-      case "/langgraph":
-        await handleSynchronous(prompt);
-        break;
-      case "/langgraph-streaming":
-        await handleStreaming(responseStream, prompt);
-        break;
-    }
+    await handleStreaming(responseStream, prompt);
   }
 )

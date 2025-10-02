@@ -10,6 +10,7 @@ P_FN_TIMEOUT=60
 LAMBDA_STACK=langgraph-on-lambda
 LAMBDA_TEMPLATE=iac/template.yaml
 LAMBDA_OUTPUT=iac/template_output.yaml
-LAMBDA_PARAMS="ParameterKey=apiStage,ParameterValue=${P_API_STAGE} ParameterKey=fnMemory,ParameterValue=${P_FN_MEMORY} ParameterKey=fnTimeout,ParameterValue=${P_FN_TIMEOUT} ParameterKey=dependencies,ParameterValue=${O_LAYER_ARN}"
-O_FN=output-function-name
+LAMBDA_PARAMS="ParameterKey=apiStage,ParameterValue=${P_API_STAGE} ParameterKey=fnMemory,ParameterValue=${P_FN_MEMORY} ParameterKey=fnTimeout,ParameterValue=${P_FN_TIMEOUT}"
+O_FN_BUFFERED=output-buffered-function-name
+O_FN_STREAMING=output-streaming-function-name
 O_API_ENDPOINT=output-api-endpoint
