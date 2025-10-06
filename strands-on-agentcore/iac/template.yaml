@@ -60,9 +60,9 @@ Resources:
           LANGFUSE_SECRET_KEY: !Ref langfuseSecretKey
         - !Ref "AWS::NoValue"
       Tags:
-        'application:group': agentcore
-        'application:subgroup': agentcore-runtime
-        'application:owner': heeki
+        application:group: agentcore
+        application:subgroup: agentcore-runtime
+        application:owner: heeki
 Outputs:
   outAgentArn:
     Value: !GetAtt AgentCoreRuntime.AgentRuntimeArn
