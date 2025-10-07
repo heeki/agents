@@ -10,6 +10,12 @@ Parameters:
     Type: String
   networkConfiguration:
     Type: String
+  securityGroups:
+    Type: List<String>
+    Default: ""
+  subnets:
+    Type: List<String>
+    Default: ""
   protocolConfiguration:
     Type: String
   allowedClients:
@@ -35,6 +41,7 @@ Conditions:
     - !Not [!Equals [!Ref langfuseHost, ""]]
     - !Not [!Equals [!Ref langfusePublicKey, ""]]
     - !Not [!Equals [!Ref langfuseSecretKey, ""]]
+  IsPublicNetwork: !Equals [!Ref networkConfiguration, "PUBLIC"]
 Resources:
   AgentCoreRuntime:
     Type: AWS::BedrockAgentCore::Runtime
@@ -44,8 +51,13 @@ Resources:
         ContainerConfiguration:
           ContainerUri: !Ref containerUri
       RoleArn: !Ref roleArn
-      NetworkConfiguration:
-        NetworkMode: !Ref networkConfiguration
+      NetworkConfiguration: !If
+        - IsPublicNetwork
+        - NetworkMode: !Ref networkConfiguration
+        - NetworkMode: !Ref networkConfiguration
+          NetworkModeConfig:
+            SecurityGroups: !Ref securityGroups
+            Subnets: !Ref subnets
       ProtocolConfiguration: !Ref protocolConfiguration
       AuthorizerConfiguration: !If
         - HasAuthorizerConfig

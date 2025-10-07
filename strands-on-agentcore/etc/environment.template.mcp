@@ -6,13 +6,16 @@ ACCOUNTID=your-aws-account-id
 
 # infrastructure configuration
 P_REPOSITORY_NAME=agentcore/hello
+P_VPC_ID=your-vpc-id
+P_CLIENT_INGRESS_CIDR=your-allowed-ingress-cidr
 INFRASTRUCTURE_STACK=agentcore-infrastructure
 INFRASTRUCTURE_TEMPLATE=iac/infrastructure.yaml
 INFRASTRUCTURE_OUTPUT=iac/infrastructure_output.yaml
-INFRASTRUCTURE_PARAMS="ParameterKey=repositoryName,ParameterValue=${P_REPOSITORY_NAME}"
+INFRASTRUCTURE_PARAMS="ParameterKey=repositoryName,ParameterValue=${P_REPOSITORY_NAME} ParameterKey=vpcId,ParameterValue=${P_VPC_ID} ParameterKey=clientIngressCidr,ParameterValue=${P_CLIENT_INGRESS_CIDR}"
 O_ECR_REPO=output-repo-name
 O_ECR_REPO_ARN=output-repo-arn
 O_ECR_REPO_URI=output-repo-uri
+O_AGENT_SGROUP_ID=output-security-group-id
 O_AGENT_ROLE_ARN=output-role-arn
 
 # container configuration
@@ -61,6 +64,22 @@ AGENT_NAME=mcp_example
 SERVER_PROTOCOL=MCP
 ENV_VARS='{"LANGFUSE_HOST": "${LANGFUSE_HOST}", "LANGFUSE_PUBLIC_KEY": "${LANGFUSE_PUBLIC_KEY}", "LANGFUSE_SECRET_KEY": "${LANGFUSE_SECRET_KEY}"}'
 AUTHORIZER_CONFIGURATION='{"customJWTAuthorizer":{"discoveryUrl":"${P_COGNITO_DISCOVERY_URL}","allowedClients":["${O_COGNITO_CLIENTID}"]}}'
+
+# agentcore configuration
+P_AGENT_NAME=your-agent-name
+P_CONTAINER_URI=${C_REPO_URI}
+P_PROTOCOL_CONFIGURATION=HTTP
+P_NETWORK_CONFIGURATION=PUBLIC
+P_SECURITY_GROUPS=${O_AGENT_SGROUP_ID}
+P_SUBNETIDS_PRIVATE=your-commas-separated-list-of-private-subnet-ids
+RUNTIME_STACK=agentcore-hello-runtime
+RUNTIME_TEMPLATE=iac/template.yaml
+RUNTIME_OUTPUT=iac/template_output.yaml
+RUNTIME_PARAMS="ParameterKey=agentName,ParameterValue=${P_AGENT_NAME} ParameterKey=containerUri,ParameterValue=${P_CONTAINER_URI} ParameterKey=roleArn,ParameterValue=${O_AGENT_ROLE_ARN} ParameterKey=networkConfiguration,ParameterValue=${P_NETWORK_CONFIGURATION} ParameterKey=securityGroups,ParameterValue=${P_SECURITY_GROUPS} ParameterKey=subnets,ParameterValue=${P_SUBNETIDS_PRIVATE} ParameterKey=protocolConfiguration,ParameterValue=${P_PROTOCOL_CONFIGURATION} ParameterKey=allowedClients,ParameterValue=${P_ALLOWED_CLIENTS} ParameterKey=discoveryUrl,ParameterValue=${P_DISCOVERY_URL} ParameterKey=langfuseHost,ParameterValue=${LANGFUSE_HOST} ParameterKey=langfusePublicKey,ParameterValue=${LANGFUSE_PUBLIC_KEY} ParameterKey=langfuseSecretKey,ParameterValue=${LANGFUSE_SECRET_KEY}"
+O_AGENT_ID=output-agent-id
+O_AGENT_ARN=arn:aws:bedrock-agentcore:${REGION}:${ACCOUNTID}:runtime/${O_AGENT_ID}
+O_AGENT_VERSION=1
+O_AGENT_QUALIFIER=DEFAULT
 
 # agent deployed configuration
 O_AGENT_ARN=output-agent-runtime-arn
