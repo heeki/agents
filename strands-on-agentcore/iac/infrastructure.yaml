@@ -137,6 +137,15 @@ Resources:
                   - bedrock-agentcore:RetrieveMemoryRecords
                 Resource:
                   - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:memory/*'
+        - PolicyName: bedrock-agentcore-user
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:InvokeAgentRuntimeForUser
+                Resource:
+                  - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*'
 Outputs:
   outRepository:
     Value: !Ref Repository
