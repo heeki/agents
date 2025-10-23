@@ -56,8 +56,10 @@ local.podman:
 		${C_TAG}
 local.podman.clean:
 	podman container prune -f || true
+local.prompt:
+	echo '{"prompt": "${P_PROMPT}"}'
 local.test:
-	curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"prompt": "What is VO2 max? What is the best way to improve it?"}'
+	curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"prompt": "${P_PROMPT}"}'
 local.test.memory1:
 	curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"prompt": "My name is ${USER_ID}. What is VO2 max? What is the best way to improve it?"}'
 local.test.memory2:
@@ -92,4 +94,4 @@ agentcore.create:
 agentcore.update:
 	uv run iac/deploy.py --action update --runtime-id ${O_AGENT_ID} --ecr-repo-uri ${C_REPO_URI} --execution-role ${EXECUTION_ROLE} --server-protocol ${SERVER_PROTOCOL} ${ENV_VARS_FLAG} ${AUTHORIZE_FLAG}
 agentcore.invoke:
-	uv run iac/deploy.py --action invoke --agent-arn ${O_AGENT_ARN} --agent-version ${O_AGENT_QUALIFIER} --prompt ${P_PROMPT}
+	uv run iac/deploy.py --action invoke --agent-arn ${O_AGENT_ARN} --agent-version ${O_AGENT_QUALIFIER} --prompt "${P_PROMPT}"

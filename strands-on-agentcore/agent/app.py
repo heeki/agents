@@ -1,6 +1,8 @@
+import boto3
 import logging
 import os
 from strands import Agent
+from strands.models import BedrockModel
 from bedrock_agentcore import BedrockAgentCoreApp
 
 name = os.getenv("AGENT_NAME", "test")
@@ -11,7 +13,17 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 app = BedrockAgentCoreApp()
-agent = Agent()
+session = boto3.Session()
+model = BedrockModel(
+    # model_id="us.anthropic.claude-sonnet-4-20250514-v1:0",
+    model_id="us.amazon.nova-lite-v1:0",
+    max_tokens=1000,
+    temperature=0.5,
+    session=session
+)
+agent = Agent(
+    model=model
+)
 
 @app.entrypoint
 async def agent_invocation(payload, context):
