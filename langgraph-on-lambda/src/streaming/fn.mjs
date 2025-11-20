@@ -82,8 +82,13 @@ export const handler = awslambda.streamifyResponse(
         "x-custom-header": "example-custom-header"
       }
     };
-    responseStream.write(JSON.stringify(httpResponseMetadata));
-    responseStream.write("\x00".repeat(8));
+    responseStream = awslambda.HttpResponseStream.from(
+      responseStream,
+      httpResponseMetadata
+    );
+    // responseStream.write("hello ");
+    // await new Promise(r => setTimeout(r, 1000));
+    // responseStream.write("world!\n");
 
     const body = event.isBase64Encoded ? parseBase64(event.body) : JSON.parse(event.body);
     console.log(JSON.stringify(body));

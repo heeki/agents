@@ -30,4 +30,4 @@ lambda.invoke.async:
 curl.buffered:
 	curl -X POST -H "Content-Type: application/json" -d @etc/prompt.json ${O_API_ENDPOINT}/langgraph-buffered --no-buffer
 curl.streaming:
-	curl -X POST -H "Content-Type: application/json" -d @etc/prompt.json ${O_API_ENDPOINT}/langgraph --no-buffer
+	curl -X POST -H "Content-Type: application/json" -d @etc/prompt.json ${O_API_ENDPOINT}/langgraph-streaming --no-buffer

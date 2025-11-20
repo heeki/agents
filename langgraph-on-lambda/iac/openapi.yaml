@@ -43,8 +43,6 @@ paths:
           description: ok
         500:
           $ref: "#/components/responses/error"
-        default:
-          $ref: "#/components/responses/error"
       x-amazon-apigateway-integration:
         httpMethod: POST
         payloadFormatVersion: "1.0"
@@ -54,7 +52,7 @@ paths:
         type: AWS_PROXY
         uri:
           Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${FnBuffered}/invocations"
-  /langgraph:
+  /langgraph-streaming:
     post:
       summary: langgraph streaming response
       description: endpoint for langgraph streaming response currently unsupported
@@ -63,14 +61,13 @@ paths:
           description: ok
         500:
           $ref: "#/components/responses/error"
-        default:
-          $ref: "#/components/responses/error"
       x-amazon-apigateway-integration:
         httpMethod: POST
         payloadFormatVersion: "1.0"
         responses:
           default:
             statusCode: 200
+        responseTransferMode: "STREAM"
         type: AWS_PROXY
         uri:
-          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${FnStreaming}/invocations"
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2021-11-15/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${FnStreaming}/response-streaming-invocations"
