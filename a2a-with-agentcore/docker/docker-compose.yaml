@@ -1,0 +1,99 @@
+# A2A Multi-Agent Fitness System - Local Development (Podman Compatible)
+#
+# Usage:
+#   make local.compose.up   - Start all agents
+#   make local.compose.down - Stop all agents
+#   make local.compose.logs - View logs
+#
+# Endpoints:
+#   Orchestrator:     http://localhost:8081
+#   Biomechanics Lab: http://localhost:8082
+#   Life Sync:        http://localhost:8083
+#
+# Note: 'version' field is omitted as it's deprecated in Compose Spec
+# and can cause issues with podman-compose
+
+services:
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: agents/orchestrator/dockerfile
+    container_name: a2a-orchestrator
+    ports:
+      - "8081:8080"
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - MODEL_ID=${MODEL_ID:-us.amazon.nova-lite-v1:0}
+      - ORCHESTRATOR_PORT=8080
+      - BIOMECHANICS_URL=http://biomechanics-lab:8080
+      - LIFESYNC_URL=http://life-sync:8080
+      # Disable OTEL for local testing
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_TRACES_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=none
+    volumes:
+      - ${HOME}/.aws:/home/bedrock_agentcore/.aws:ro
+    depends_on:
+      - biomechanics-lab
+      - life-sync
+    networks:
+      - a2a-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  biomechanics-lab:
+    build:
+      context: ..
+      dockerfile: agents/biomechanics-lab/dockerfile
+    container_name: a2a-biomechanics-lab
+    ports:
+      - "8082:8080"
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - MODEL_ID=${MODEL_ID:-us.amazon.nova-lite-v1:0}
+      - BIOMECHANICS_PORT=8080
+      - NODE_ENV=production
+    volumes:
+      - ${HOME}/.aws:/home/bedrock_agentcore/.aws:ro
+    networks:
+      - a2a-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  life-sync:
+    build:
+      context: ..
+      dockerfile: agents/life-sync/dockerfile
+    container_name: a2a-life-sync
+    ports:
+      - "8083:8080"
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - MODEL_ID=${MODEL_ID:-us.amazon.nova-lite-v1:0}
+      - LIFESYNC_PORT=8080
+      # Disable OTEL for local testing
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_TRACES_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=none
+    volumes:
+      - ${HOME}/.aws:/home/bedrock_agentcore/.aws:ro
+    networks:
+      - a2a-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  a2a-network:
+    driver: bridge

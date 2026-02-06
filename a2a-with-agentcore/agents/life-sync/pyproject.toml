@@ -1,0 +1,9 @@
+[project]
+name = "a2a-life-sync"
+version = "1.0.0"
+description = "A2A Life Sync Agent using LangGraph Python"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

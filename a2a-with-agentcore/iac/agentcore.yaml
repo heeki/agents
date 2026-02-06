@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Amazon Bedrock AgentCore Runtimes for A2A Fitness Multi-Agent System
+
+Parameters:
+  ExecutionRoleArn:
+    Type: String
+    Description: IAM role ARN for agent execution
+
+  OrchestratorImageUri:
+    Type: String
+    Description: ECR URI for orchestrator container
+
+  BiomechanicsImageUri:
+    Type: String
+    Description: ECR URI for biomechanics lab container
+
+  LifeSyncImageUri:
+    Type: String
+    Description: ECR URI for life sync container
+
+Resources:
+  # Biomechanics Lab Agent Runtime
+  BiomechanicsLabRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: a2a_biomechanics_lab_v2
+      Description: Biomechanics Lab agent for creating science-based workout plans
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Ref BiomechanicsImageUri
+      RoleArn: !Ref ExecutionRoleArn
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      ProtocolConfiguration: A2A
+
+  # Life Sync Agent Runtime
+  LifeSyncRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: a2a_life_sync_v2
+      Description: Life Sync agent for validating workout feasibility
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Ref LifeSyncImageUri
+      RoleArn: !Ref ExecutionRoleArn
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      ProtocolConfiguration: A2A
+
+  # Orchestrator Agent Runtime (depends on other agents)
+  OrchestratorRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    DependsOn:
+      - BiomechanicsLabRuntime
+      - LifeSyncRuntime
+    Properties:
+      AgentRuntimeName: a2a_orchestrator_v2
+      Description: Central orchestrator coordinating the fitness multi-agent system
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Ref OrchestratorImageUri
+      RoleArn: !Ref ExecutionRoleArn
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      ProtocolConfiguration: A2A
+      EnvironmentVariables:
+        AWS_REGION: !Ref AWS::Region
+        MODEL_ID: us.amazon.nova-lite-v1:0
+        BIOMECHANICS_ARN: !GetAtt BiomechanicsLabRuntime.AgentRuntimeArn
+        LIFESYNC_ARN: !GetAtt LifeSyncRuntime.AgentRuntimeArn
+
+Outputs:
+  OrchestratorRuntimeId:
+    Description: Orchestrator Runtime ID
+    Value: !Ref OrchestratorRuntime
+    Export:
+      Name: !Sub '${AWS::StackName}-OrchestratorRuntimeId'
+
+  OrchestratorRuntimeArn:
+    Description: Orchestrator Runtime ARN
+    Value: !GetAtt OrchestratorRuntime.AgentRuntimeArn
+    Export:
+      Name: !Sub '${AWS::StackName}-OrchestratorRuntimeArn'
+
+  BiomechanicsRuntimeId:
+    Description: Biomechanics Lab Runtime ID
+    Value: !Ref BiomechanicsLabRuntime
+    Export:
+      Name: !Sub '${AWS::StackName}-BiomechanicsRuntimeId'
+
+  BiomechanicsRuntimeArn:
+    Description: Biomechanics Lab Runtime ARN
+    Value: !GetAtt BiomechanicsLabRuntime.AgentRuntimeArn
+    Export:
+      Name: !Sub '${AWS::StackName}-BiomechanicsRuntimeArn'
+
+  LifeSyncRuntimeId:
+    Description: Life Sync Runtime ID
+    Value: !Ref LifeSyncRuntime
+    Export:
+      Name: !Sub '${AWS::StackName}-LifeSyncRuntimeId'
+
+  LifeSyncRuntimeArn:
+    Description: Life Sync Runtime ARN
+    Value: !GetAtt LifeSyncRuntime.AgentRuntimeArn
+    Export:
+      Name: !Sub '${AWS::StackName}-LifeSyncRuntimeArn'

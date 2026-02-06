@@ -1,0 +1,9 @@
+[project]
+name = "a2a-orchestrator"
+version = "1.0.0"
+description = "A2A Orchestrator Agent using Strands SDK"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

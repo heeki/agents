@@ -1,0 +1,47 @@
+# Orchestrator Agent - Strands Python
+# Multi-stage build for ARM64 deployment on AgentCore
+
+FROM --platform=linux/arm64 public.ecr.aws/docker/library/python:3.12-slim AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install dependencies
+COPY agents/orchestrator/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir aws-opentelemetry-distro>=0.10.0
+
+# Production stage
+FROM --platform=linux/arm64 public.ecr.aws/docker/library/python:3.12-slim
+
+WORKDIR /app
+
+# Create non-root user for AgentCore (or use existing user at UID 1000)
+RUN id -u bedrock_agentcore 2>/dev/null || useradd -m -u 1001 bedrock_agentcore
+
+# Copy installed packages from builder
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy source code
+COPY agents/orchestrator/a2a ./a2a
+COPY agents/orchestrator/tools ./tools
+COPY agents/orchestrator/app.py ./
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV DOCKER_CONTAINER=1
+ENV ORCHESTRATOR_PORT=9000
+
+# Switch to non-root user
+USER bedrock_agentcore
+
+# Expose port
+EXPOSE 9000
+
+# Start the agent with OpenTelemetry instrumentation
+CMD ["opentelemetry-instrument", "python", "app.py"]

@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Cognito User Pool for A2A Fitness API authentication
+
+Parameters:
+  domainPrefix:
+    Type: String
+    Description: Domain prefix for Cognito hosted UI
+  userName:
+    Type: String
+    Default: testuser
+    Description: Default test user name
+  userEmail:
+    Type: String
+    Default: test@example.com
+    Description: Default test user email
+
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: a2a-fitness-users
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+          TemporaryPasswordValidityDays: 7
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref domainPrefix
+      UserPoolId: !Ref UserPool
+
+  ResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      Identifier: a2a-fitness-api
+      Name: A2A Fitness API
+      Scopes:
+        - ScopeName: agents:invoke
+          ScopeDescription: "Invoke fitness agents"
+        - ScopeName: agents:read
+          ScopeDescription: "Read agent cards and status"
+      UserPoolId: !Ref UserPool
+
+  AppClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: ResourceServer
+    Properties:
+      ClientName: a2a-fitness-client
+      UserPoolId: !Ref UserPool
+      GenerateSecret: true
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - client_credentials
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+        - a2a-fitness-api/agents:invoke
+        - a2a-fitness-api/agents:read
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs:
+        - http://localhost:3000/callback
+      LogoutURLs:
+        - http://localhost:3000/logout
+      ExplicitAuthFlows:
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+  TestUser:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      Username: !Ref userName
+      UserPoolId: !Ref UserPool
+      UserAttributes:
+        - Name: email
+          Value: !Ref userEmail
+        - Name: email_verified
+          Value: "true"
+      ForceAliasCreation: true
+
+Outputs:
+  outUserPoolId:
+    Value: !Ref UserPool
+    Description: Cognito User Pool ID
+    Export:
+      Name: a2a-cognito-user-pool-id
+
+  outUserPoolArn:
+    Value: !GetAtt UserPool.Arn
+    Description: Cognito User Pool ARN
+    Export:
+      Name: a2a-cognito-user-pool-arn
+
+  outProviderName:
+    Value: !GetAtt UserPool.ProviderName
+    Description: Cognito Provider Name
+
+  outProviderUrl:
+    Value: !GetAtt UserPool.ProviderURL
+    Description: Cognito Provider URL
+
+  outClientId:
+    Value: !Ref AppClient
+    Description: Cognito App Client ID
+    Export:
+      Name: a2a-cognito-client-id
+
+  outDomain:
+    Value: !Sub "https://${domainPrefix}.auth.${AWS::Region}.amazoncognito.com"
+    Description: Cognito Hosted UI Domain

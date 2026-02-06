@@ -1,0 +1,49 @@
+# Biomechanics Lab Agent - LangGraph TypeScript
+# Multi-stage build for ARM64 deployment on AgentCore
+
+FROM --platform=linux/arm64 public.ecr.aws/docker/library/node:22-slim AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY agents/biomechanics-lab/package*.json ./
+
+# Install ALL dependencies (including devDependencies for build)
+RUN npm ci
+
+# Copy source code
+COPY agents/biomechanics-lab/src ./src
+COPY agents/biomechanics-lab/tsconfig.json ./
+
+# Build TypeScript
+RUN npm run build
+
+# Install only production dependencies for final image
+RUN npm ci --only=production
+
+# Production stage
+FROM --platform=linux/arm64 public.ecr.aws/docker/library/node:22-slim
+
+WORKDIR /app
+
+# Create non-root user for AgentCore (or use existing user at UID 1000)
+RUN id -u bedrock_agentcore 2>/dev/null || useradd -m -u 1001 bedrock_agentcore
+
+# Copy built files and production dependencies
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
+
+# Set environment variables
+ENV NODE_ENV=production
+ENV DOCKER_CONTAINER=1
+ENV BIOMECHANICS_PORT=9000
+
+# Switch to non-root user
+USER bedrock_agentcore
+
+# Expose port
+EXPOSE 9000
+
+# Start the agent
+CMD ["node", "dist/index.js"]

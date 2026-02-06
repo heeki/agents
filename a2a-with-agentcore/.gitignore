@@ -1,0 +1,15 @@
+# directories
+.claude
+.pytest_cache
+.venv
+.venv-iac
+__pycache__
+node_modules
+tmp
+
+# files
+etc/environment.sh
+iac/*_output.yaml
+*.env
+.env.*
+!.env.example

@@ -1,0 +1,207 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Infrastructure for A2A Multi-Agent Fitness System
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  vpcId:
+    Type: String
+    Description: VPC ID for security groups
+  clientIngressCidr:
+    Type: String
+    Description: CIDR for client ingress (e.g., your IP)
+
+Resources:
+  # ECR Repositories for each agent
+  OrchestratorRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: a2a/a2a-orchestrator
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  BiomechanicsRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: a2a/a2a-biomechanics-lab
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  LifeSyncRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: a2a/a2a-life-sync
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  # Security Group for AgentCore Runtimes
+  AgentSGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for A2A AgentCore Runtimes
+      GroupName: a2a-fitness-agents-sg
+      VpcId: !Ref vpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref clientIngressCidr
+          Description: HTTPS from client
+      Tags:
+        - Key: Name
+          Value: a2a-fitness-agents-sg
+
+  # IAM Role for AgentCore execution
+  AgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: a2a-fitness-agent-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - bedrock-agentcore.amazonaws.com
+            Action:
+              - sts:AssumeRole
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Sub '${AWS::AccountId}'
+              ArnLike:
+                "aws:SourceArn": !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*'
+      Path: '/'
+      Policies:
+        - PolicyName: cloudwatch-logs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:DescribeLogGroups
+                  - logs:FilterLogEvents
+                  - logs:GetLogEvents
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:DescribeLogStreams
+                  - logs:PutRetentionPolicy
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:aws/spans:*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/application-signals/data:*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:aws/spans:*'
+              - Effect: Allow
+                Resource: "*"
+                Action: cloudwatch:PutMetricData
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: bedrock-agentcore
+
+        - PolicyName: ecr-pull
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource:
+                  - !GetAtt OrchestratorRepository.Arn
+                  - !GetAtt BiomechanicsRepository.Arn
+                  - !GetAtt LifeSyncRepository.Arn
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+
+        - PolicyName: xray-tracing
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: "*"
+
+        - PolicyName: bedrock-models
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  # Amazon Nova Lite
+                  - !Sub 'arn:aws:bedrock:*::foundation-model/amazon.nova-lite-v1:0'
+                  - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.amazon.nova-lite-v1:0'
+                  # Claude Sonnet (fallback)
+                  - !Sub 'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0'
+                  - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0'
+
+        - PolicyName: agentcore-workload
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetWorkloadAccessToken
+                  - bedrock-agentcore:GetWorkloadAccessTokenForJWT
+                  - bedrock-agentcore:GetWorkloadAccessTokenForUserId
+                Resource:
+                  - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default'
+                  - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default/workload-identity/*'
+
+        - PolicyName: agentcore-invoke
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Allow orchestrator to invoke sub-agents
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:InvokeAgentRuntime
+                  - bedrock-agentcore:InvokeAgentRuntimeForUser
+                Resource:
+                  - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*'
+
+Outputs:
+  outOrchestratorRepositoryUri:
+    Value: !GetAtt OrchestratorRepository.RepositoryUri
+    Description: ECR URI for Orchestrator agent
+    Export:
+      Name: a2a-orchestrator-repo-uri
+
+  outBiomechanicsRepositoryUri:
+    Value: !GetAtt BiomechanicsRepository.RepositoryUri
+    Description: ECR URI for Biomechanics Lab agent
+    Export:
+      Name: a2a-biomechanics-repo-uri
+
+  outLifeSyncRepositoryUri:
+    Value: !GetAtt LifeSyncRepository.RepositoryUri
+    Description: ECR URI for Life Sync agent
+    Export:
+      Name: a2a-lifesync-repo-uri
+
+  outAgentSGroupId:
+    Value: !GetAtt AgentSGroup.GroupId
+    Description: Security group ID for agents
+    Export:
+      Name: a2a-agent-sg-id
+
+  outAgentRoleArn:
+    Value: !GetAtt AgentRole.Arn
+    Description: IAM role ARN for AgentCore execution
+    Export:
+      Name: a2a-agent-role-arn
