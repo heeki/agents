@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: AgentCore Gateway request interceptor Lambda and service role
+
+Parameters:
+  pFunctionName:
+    Type: String
+    Description: Name of the interceptor Lambda function
+  pAccountId:
+    Type: String
+    Description: AWS account ID for IAM policy scoping
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 128
+    Runtime: python3.12
+
+Resources:
+  # Lambda interceptor function
+  InterceptorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Ref pFunctionName
+      CodeUri: ../fn/
+      Handler: handler.lambda_handler
+      Architectures:
+        - arm64
+
+  # AgentCore Gateway service role
+  GatewayServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${pFunctionName}-gateway-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref pAccountId
+      Policies:
+        - PolicyName: InvokeInterceptor
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt InterceptorFunction.Arn
+
+Outputs:
+  oInterceptorArn:
+    Description: Interceptor Lambda function ARN
+    Value: !GetAtt InterceptorFunction.Arn
+  oGatewayRoleArn:
+    Description: AgentCore Gateway service role ARN
+    Value: !GetAtt GatewayServiceRole.Arn

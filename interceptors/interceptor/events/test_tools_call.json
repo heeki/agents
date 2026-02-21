@@ -1,0 +1,28 @@
+{
+  "interceptorInputVersion": "1.0",
+  "mcp": {
+    "rawGatewayRequest": {
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"hello_world\",\"arguments\":{\"name\":\"World\"}}}"
+    },
+    "gatewayRequest": {
+      "path": "/mcp",
+      "httpMethod": "POST",
+      "headers": {
+        "Accept": "application/json",
+        "Mcp-Session-Id": "test-session-123",
+        "User-Agent": "test-client/1.0"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+          "name": "hello_world",
+          "arguments": {
+            "name": "World"
+          }
+        }
+      }
+    }
+  }
+}

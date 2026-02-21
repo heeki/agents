@@ -11,8 +11,10 @@ wheels/
 *.spec.md
 
 # directories
+.aws-sam
 .vscode
 tmp
 
 # files
+environment.sh
 notes.md
