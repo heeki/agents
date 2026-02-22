@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AgentCore Runtime for MCP server
+
+Parameters:
+  pRuntimeName:
+    Type: String
+    Description: Name of the AgentCore Runtime
+  pAccountId:
+    Type: String
+    Description: AWS account ID
+  pRegion:
+    Type: String
+    Description: AWS region
+  pS3Bucket:
+    Type: String
+    Description: S3 bucket containing the deployment package
+  pS3Prefix:
+    Type: String
+    Description: S3 key for the deployment package zip
+
+Resources:
+  RuntimeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${pRuntimeName}-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref pAccountId
+              ArnLike:
+                aws:SourceArn: !Sub "arn:aws:bedrock-agentcore:${pRegion}:${pAccountId}:*"
+      Policies:
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                  - logs:PutLogEvents
+                Resource: !Sub "arn:aws:logs:${pRegion}:${pAccountId}:log-group:/aws/bedrock-agentcore/runtimes/*"
+
+  Runtime:
+    Type: AWS::BedrockAgentCore::Runtime
+    DependsOn: RuntimeRole
+    Properties:
+      AgentRuntimeName: !Ref pRuntimeName
+      Description: MCP server for interceptors demo
+      RoleArn: !GetAtt RuntimeRole.Arn
+      AgentRuntimeArtifact:
+        CodeConfiguration:
+          Code:
+            S3:
+              Bucket: !Ref pS3Bucket
+              Prefix: !Ref pS3Prefix
+          Runtime: PYTHON_3_12
+          EntryPoint:
+            - main.py
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      ProtocolConfiguration: MCP
+      RequestHeaderConfiguration:
+        RequestHeaderAllowlist:
+          - X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo
+
+Outputs:
+  oRuntimeArn:
+    Description: AgentCore Runtime ARN
+    Value: !GetAtt Runtime.AgentRuntimeArn
+  oRuntimeId:
+    Description: AgentCore Runtime ID
+    Value: !GetAtt Runtime.AgentRuntimeId
+  oRuntimeRoleArn:
+    Description: Runtime execution role ARN
+    Value: !GetAtt RuntimeRole.Arn
