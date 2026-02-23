@@ -39,8 +39,9 @@ interceptors/
       interceptor.yaml                # SAM template (Lambda + Gateway service role)
   app/
     mcpserver/                        # Sub-project 2, Phase 1: MCP server
+      start.py                        # OTEL-instrumented entry point (wraps main.py)
       main.py                         # FastMCP hello_world server (reads interceptor headers)
-      requirements.txt                # Python dependencies (mcp[cli], uvicorn)
+      requirements.txt                # Python dependencies (mcp[cli], uvicorn, aws-opentelemetry-distro, boto3)
       test_runtime.py                 # Test script (SigV4 and JWT modes)
       setup_observability.py          # CloudWatch Logs delivery pipeline management (API)
       iac/
@@ -86,7 +87,7 @@ make interceptor.local.tools_list    # verify passthrough
 
 ## Sub-Project 2, Phase 1: MCP Server on AgentCore Runtime
 
-Stateless MCP server deployed to AgentCore Runtime via CloudFormation. Exposes a `hello_world` tool. Configured with JWT authentication via Cognito.
+Stateless MCP server deployed to AgentCore Runtime via CloudFormation. Exposes a `hello_world` tool. Configured with JWT authentication via Cognito. Uses OTEL auto-instrumentation via `start.py` wrapping `main.py` with `aws-opentelemetry-distro`.
 
 ### Resources
 
@@ -128,8 +129,8 @@ make runtime.logs                    # tail application logs
 ### Packaging Details
 
 The `runtime.package` target:
-1. Installs Python dependencies for `aarch64-manylinux2014` / Python 3.12 into `tmp/runtime_package/`
-2. Copies `app/mcpserver/main.py` into the package directory
+1. Installs Python dependencies for `aarch64-manylinux2014` / Python 3.12 into `tmp/runtime_package/` (117 packages including `aws-opentelemetry-distro`, all OTEL instrumentors, and `boto3`/`botocore`, ~35MB zip)
+2. Copies `app/mcpserver/start.py` and `app/mcpserver/main.py` into the package directory
 3. Zips the package and names it with the md5 hash of the zip (e.g., `runtime_<md5>.zip`)
 4. Uploads the zip to `s3://<bucket>/<stack-name>/runtime_<md5>.zip`
 
@@ -284,11 +285,25 @@ make runtime.observability.delete    # cleanup before deleting runtime
 
 Log group: `/aws/vendedlogs/bedrock-agentcore/runtime/APPLICATION_LOGS/<runtime-id>`
 
-### OTEL Sidecar Log Group (auto-created)
+### OTEL Application Log Group
 
-The runtime infrastructure creates a log group at `/aws/bedrock-agentcore/runtimes/<runtime-name>-<id>-DEFAULT` with stream `otel-rt-logs`. This group is intended for application-level OTEL logs but requires the `opentelemetry-instrument` wrapper to populate. The runtime container pre-configures OTEL env vars (`OTEL_PYTHON_DISTRO=aws_distro`, `OTEL_PYTHON_CONFIGURATOR=aws_configurator`, `OTEL_EXPORTER_OTLP_LOGS_HEADERS` with log group routing), but these only take effect when the application is started via `opentelemetry-instrument python main.py`. Code configuration's EntryPoint only accepts `["main.py"]` format (multi-command format fails CFN validation), so this log group remains empty for code-configuration-based deployments. The OTEL sidecar also does not expose an OTLP receiver on localhost, so programmatic OTEL SDK export is not an alternative.
+The runtime infrastructure creates a log group at `/aws/bedrock-agentcore/runtimes/<runtime-name>-<id>-DEFAULT` with two stream types:
+- `otel-rt-logs` — structured OTEL log records exported by the AWS OTEL distro's `OTLPAwsLogRecordExporter` (writes directly to CloudWatch via botocore, not via localhost OTLP)
+- `runtime-logs-<session-id>` — stdout/stderr from the application process (startup logs, uvicorn access logs)
 
-Python `logging` module output is not captured by either log group.
+The MCP server uses `start.py` to bootstrap OTEL auto-instrumentation. The `EnvironmentVariables` in the CFN template set `AGENT_OBSERVABILITY_ENABLED=true` and `AWS_REGION`.
+
+**Prerequisites for OTEL auto-instrumentation to work:**
+1. **`boto3`/`botocore` in the deployment package** — the AWS OTEL distro's `OTLPAwsLogRecordExporter` uses botocore to write logs directly to CloudWatch. Without it, the entire AWS configurator fails with `ModuleNotFoundError: No module named 'botocore'` and no OTEL telemetry is exported.
+2. **`AWS_REGION` environment variable** — the AWS OTEL distro needs this to auto-configure OTLP endpoints. Without it, logs warn "AWS region could not be determined."
+3. **IAM role with `logs:DescribeLogGroups` on `Resource: "*"`** — required as a separate statement (cannot be scoped to a specific log group ARN). The role also needs `CreateLogStream`, `PutLogEvents`, etc. scoped to the log group.
+4. **IAM role with `xray:PutTraceSegments` and `xray:PutTelemetryRecords` on `Resource: "*"`** — the OTEL trace exporter sends spans to X-Ray. Without these permissions, trace export fails with HTTP 403.
+
+```bash
+make runtime.logs                    # tail vended delivery pipeline logs
+```
+
+Log group: `/aws/bedrock-agentcore/runtimes/<runtime-name>-<id>-DEFAULT`
 
 ## Known Issues
 

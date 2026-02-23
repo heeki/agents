@@ -48,7 +48,7 @@ runtime.package:
 		--target tmp/runtime_package \
 		--only-binary :all: \
 		-r app/mcpserver/requirements.txt
-	cp app/mcpserver/main.py tmp/runtime_package/
+	cp app/mcpserver/start.py app/mcpserver/main.py tmp/runtime_package/
 	cd tmp/runtime_package && zip -qr ../runtime_tmp.zip .
 	P_ZIP_MD5=$$(md5 -q tmp/runtime_tmp.zip) && \
 	mv tmp/runtime_tmp.zip tmp/runtime_$${P_ZIP_MD5}.zip && \

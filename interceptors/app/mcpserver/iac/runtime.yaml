@@ -53,12 +53,22 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
+                  - logs:DescribeLogGroups
+                Resource: "*"
+              - Effect: Allow
+                Action:
                   - logs:CreateLogGroup
                   - logs:CreateLogStream
-                  - logs:DescribeLogGroups
                   - logs:DescribeLogStreams
+                  - logs:FilterLogEvents
+                  - logs:GetLogEvents
                   - logs:PutLogEvents
                 Resource: !Sub "arn:aws:logs:${pRegion}:${pAccountId}:log-group:/aws/bedrock-agentcore/runtimes/*"
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                Resource: "*"
 
   Runtime:
     Type: AWS::BedrockAgentCore::Runtime
@@ -75,10 +85,13 @@ Resources:
               Prefix: !Ref pS3Prefix
           Runtime: PYTHON_3_12
           EntryPoint:
-            - main.py
+            - start.py
       NetworkConfiguration:
         NetworkMode: PUBLIC
       ProtocolConfiguration: MCP
+      EnvironmentVariables:
+        AGENT_OBSERVABILITY_ENABLED: "true"
+        AWS_REGION: !Ref pRegion
       RequestHeaderConfiguration:
         RequestHeaderAllowlist:
           - X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo

@@ -69,6 +69,8 @@ Self-contained Lambda function and SAM infrastructure for the request intercepto
 - **Tool**: `hello_world` — accepts a `name: str` parameter, reads the custom interceptor header via `ctx.request_context.request.headers`, and returns the greeting + header value
 - **ASGI middleware**: `HeaderEchoMiddleware` wraps the Starlette app to echo the interceptor request header back as a response header
 - **Server startup**: Uses `mcp.streamable_http_app()` + middleware + `uvicorn.run()` instead of `mcp.run()`
+- **Entry point**: `start.py` wraps `main.py` via `opentelemetry-instrument` auto-instrumentation (programmatic invocation, since EntryPoint doesn't support multi-command format)
+- **OTEL**: `aws-opentelemetry-distro` provides the AWS OTEL distro, configurator, and instrumentors; runtime container env vars configure the auto-instrumentation. The AWS configurator registers `AwsCwOtlpBatchLogRecordProcessor` which writes logs directly to CloudWatch via botocore.
 - **Logging**: On every tool invocation, logs request headers and interceptor header value
 - **Build**: Zip package uploaded to S3 (md5-based naming)
 - **Auth**: CustomJWTAuthorizer (Cognito OIDC discovery URL, AllowedClients)
@@ -233,8 +235,9 @@ interceptors/
       interceptor.yaml                # SAM template (Lambda + Gateway service role)
   app/
     mcpserver/                        # Sub-project 2, Phase 1: MCP server
+      start.py                        # OTEL-instrumented entry point (wraps main.py)
       main.py                         # FastMCP hello_world server (reads interceptor headers)
-      requirements.txt                # Python dependencies (mcp[cli], uvicorn)
+      requirements.txt                # Python dependencies (mcp[cli], uvicorn, aws-opentelemetry-distro, boto3)
       test_runtime.py                 # Test script (SigV4 and JWT modes)
       setup_observability.py          # CloudWatch Logs delivery pipeline management (API)
       iac/
@@ -328,7 +331,10 @@ Trust policy for `bedrock-agentcore.amazonaws.com` with `lambda:InvokeFunction` 
 
 ### Runtime Role (Sub-Project 2, Phase 1)
 
-Trust policy for `bedrock-agentcore.amazonaws.com` with CloudWatch Logs permissions.
+Trust policy for `bedrock-agentcore.amazonaws.com` with:
+- `logs:DescribeLogGroups` on `Resource: "*"` (separate statement — cannot be scoped to a specific log group ARN)
+- `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:DescribeLogStreams`, `logs:FilterLogEvents`, `logs:GetLogEvents`, `logs:PutLogEvents` scoped to `/aws/bedrock-agentcore/runtimes/*`
+- `xray:PutTraceSegments`, `xray:PutTelemetryRecords` on `Resource: "*"` (required for OTEL trace export to X-Ray)
 
 ### Gateway Role (Sub-Project 2, Phase 2 + 3)
 
@@ -398,20 +404,49 @@ make runtime.logs                    # tail application logs
 make runtime.observability.delete    # cleanup
 ```
 
-### OTEL Sidecar Log Group (auto-created, empty for code configuration)
+### OTEL Application Log Group
 
-The runtime infrastructure auto-creates a log group for application-level OTEL telemetry.
+The runtime infrastructure auto-creates a log group for application-level OTEL telemetry and runtime logs.
 
 - **Log group**: `/aws/bedrock-agentcore/runtimes/<runtime-name>-<id>-DEFAULT`
-- **Log stream**: `otel-rt-logs`
-- **Status**: Empty (0 stored bytes) for code-configuration-based deployments
-- **Why empty**: The runtime container sets OTEL env vars (`OTEL_PYTHON_DISTRO=aws_distro`, `OTEL_PYTHON_CONFIGURATOR=aws_configurator`, `OTEL_EXPORTER_OTLP_LOGS_HEADERS` with log group/stream routing) that only take effect when the application is bootstrapped via `opentelemetry-instrument python main.py`. Code configuration's EntryPoint property only accepts single-script format (`["main.py"]`); multi-command format (`["opentelemetry-instrument", "python", "main.py"]`) fails with `AWS::EarlyValidation::PropertyValidation`.
-- **No OTLP receiver**: The OTEL sidecar does not expose an OTLP receiver on localhost (neither HTTP:4318 nor gRPC:4317), so programmatic OTEL SDK export from application code is not a workaround. gRPC export to localhost:4317 blocks indefinitely and causes request timeouts.
-- **Implication**: Container runtime deployments (as opposed to code configuration) may support the `opentelemetry-instrument` entry point format, which would populate this log group.
+- **Log streams**:
+  - `otel-rt-logs` — structured OTEL log records with trace IDs, span IDs, and application log messages
+  - `runtime-logs-<session-id>` — stdout/stderr from the application process
 
-### Python `logging` Module
+**OTEL container env vars** (set by runtime infrastructure):
 
-Python `logging` module output (e.g., `logger.info()`) is not captured by either log group. It is only visible in the container's stdout/stderr, which is not surfaced to CloudWatch for code-configuration-based deployments.
+| Env var | Value |
+|---------|-------|
+| `OTEL_PYTHON_DISTRO` | `aws_distro` |
+| `OTEL_PYTHON_CONFIGURATOR` | `aws_configurator` |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` |
+| `OTEL_EXPORTER_OTLP_TIMEOUT` | `5000` |
+| `OTEL_EXPORTER_OTLP_LOGS_HEADERS` | `x-aws-log-group=...,x-aws-log-stream=otel-rt-logs,...` |
+| `OTEL_TRACES_EXPORTER` | `otlp` |
+| `OTEL_LOGS_EXPORTER` | `otlp` |
+| `OTEL_TRACES_SAMPLER` | `parentbased_always_on` |
+| `OTEL_PROPAGATORS` | `baggage,xray,tracecontext` |
+| `OTEL_PYTHON_ID_GENERATOR` | `xray` |
+| `OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED` | `true` |
+| `OTEL_PYTHON_EXCLUDED_URLS` | `/ping` |
+| `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS` | `http,sqlalchemy,psycopg2,...,system_metrics,google-genai` |
+
+**Runtime EnvironmentVariables** (set via CFN template):
+
+| Env var | Value |
+|---------|-------|
+| `AGENT_OBSERVABILITY_ENABLED` | `true` |
+| `AWS_REGION` | `!Ref pRegion` |
+
+**Entry point and auto-instrumentation**:
+- `start.py` wraps `main.py` via `opentelemetry.instrumentation.auto_instrumentation.run()`. Code configuration's EntryPoint only accepts single-script format (`["start.py"]`); multi-command format (`["opentelemetry-instrument", "python", "main.py"]`) fails `AWS::EarlyValidation::PropertyValidation`.
+- The auto-instrumentation loads the AWS distro/configurator/instrumentors. `TracerProvider` is configured with `BatchSpanProcessor` + `BaggageSpanProcessor`. `LoggerProvider` is configured with the AWS-specific `AwsCwOtlpBatchLogRecordProcessor` that writes directly to CloudWatch via botocore (not via a localhost OTLP receiver).
+
+**Prerequisites for OTEL to work**:
+1. **`boto3`/`botocore` in deployment package** — the AWS OTEL distro's `OTLPAwsLogRecordExporter` uses botocore to write logs directly to CloudWatch. Without it, the entire AWS configurator fails: `ModuleNotFoundError: No module named 'botocore'`, `Configuration of aws_configurator failed`, `Failed to auto initialize OpenTelemetry`.
+2. **`AWS_REGION` environment variable** — needed for the AWS configurator to auto-configure endpoints.
+3. **IAM role with `logs:DescribeLogGroups` on `Resource: "*"`** — must be a separate statement (cannot be scoped to a specific log group ARN). Also needs `CreateLogStream`, `PutLogEvents`, `DescribeLogStreams`, `FilterLogEvents`, `GetLogEvents` scoped to the runtime log group.
+4. **IAM role with `xray:PutTraceSegments` and `xray:PutTelemetryRecords` on `Resource: "*"`** — the OTEL trace exporter sends spans to X-Ray. Without these permissions, trace export fails with HTTP 403.
 
 ---
 
@@ -427,7 +462,7 @@ Python `logging` module output (e.g., `logger.info()`) is not captured by either
 
 5. **Gateway `SearchType: SEMANTIC` requires no targets**: The `SearchType` property on the Gateway cannot be changed while targets exist. To modify, first deploy with `pCredentialProviderArn=NONE` to delete the target, then update the Gateway, then redeploy with the real ARN.
 
-6. **Runtime logging requires API-managed delivery pipeline**: No CFN resource exists for CloudWatch Logs vended delivery. The delivery pipeline must be created via API (`setup_observability.py`). The vended logs capture structured OTEL logs (MCP request payloads), not Python `logging` output. The OTEL sidecar log group (`otel-rt-logs`) requires `opentelemetry-instrument` bootstrap, which code configuration's EntryPoint does not support.
+6. **OTEL auto-instrumentation requires botocore, AWS_REGION, and X-Ray permissions**: The AWS OTEL distro's `OTLPAwsLogRecordExporter` writes logs directly to CloudWatch via botocore API calls (not via a localhost OTLP receiver). If `botocore` is missing from the deployment package, the entire AWS configurator fails silently: `ModuleNotFoundError: No module named 'botocore'` → `Configuration of aws_configurator failed` → `Failed to auto initialize OpenTelemetry`. Additionally, `AWS_REGION` must be set as an environment variable. The IAM execution role must have `logs:DescribeLogGroups` on `Resource: "*"` as a separate statement, and `xray:PutTraceSegments` + `xray:PutTelemetryRecords` on `Resource: "*"` for trace export.
 
 7. **GatewayTarget `AllowedRequestHeaders` required for interceptor headers**: Even though the interceptor adds a custom header to the request, the Gateway strips it before forwarding to the target unless the header is listed in `MetadataConfiguration.AllowedRequestHeaders` on the GatewayTarget.
 
