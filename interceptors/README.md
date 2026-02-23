@@ -130,7 +130,7 @@ The `runtime.deploy` target picks up the latest zip from `tmp/` and passes the S
 
 ## Sub-Project 2, Phase 2: AgentCore Gateway
 
-AgentCore Gateway with an MCPServer target backed by the AgentCore Runtime. Uses Cognito OAuth2 (client_credentials flow) for Gateway-to-Runtime authentication.
+AgentCore Gateway with an MCPServer target backed by the AgentCore Runtime. Uses Cognito OAuth2 (client_credentials flow) for Gateway-to-Runtime authentication. Optionally attaches a Lambda request interceptor (Phase 3).
 
 ### Resources
 
@@ -138,9 +138,10 @@ AgentCore Gateway with an MCPServer target backed by the AgentCore Runtime. Uses
 |----------|-------|
 | Stack name | `interceptors-demo-gateway` |
 | Gateway name | `interceptors-demo-gateway` |
-| Protocol | MCP |
+| Protocol | MCP (SEMANTIC search, version 2025-03-26) |
 | Client auth | NONE |
 | Target auth | OAuth (Cognito client_credentials) |
+| Interceptor | Lambda REQUEST interceptor (conditional on `pInterceptorArn`) |
 | OAuth provider | `interceptors-demo-oauth-provider` (API-managed) |
 | IaC | CloudFormation template (`gateway/iac/gateway.yaml`) + API script (`gateway/setup_oauth.py`) |
 
@@ -148,7 +149,7 @@ AgentCore Gateway with an MCPServer target backed by the AgentCore Runtime. Uses
 
 | Target | Description |
 |--------|-------------|
-| `gateway.deploy` | SAM deploy the Gateway stack (Cognito + Gateway + conditional Target) |
+| `gateway.deploy` | SAM deploy the Gateway stack (Cognito + Gateway + conditional Target + conditional Interceptor) |
 | `gateway.setup` | Create OAuth2 credential provider via API |
 | `gateway.setup.delete` | Delete OAuth2 credential provider |
 | `gateway.setup.get` | Get OAuth2 credential provider details |
@@ -161,8 +162,8 @@ AgentCore Gateway with an MCPServer target backed by the AgentCore Runtime. Uses
 The Gateway requires a multi-step deployment because the GatewayTarget needs an OAuth credential provider ARN, but no CloudFormation resource exists for credential providers.
 
 ```bash
-# Step 1: Deploy Gateway + Cognito (no target)
-# Set O_CREDENTIAL_PROVIDER_ARN=NONE in environment.sh
+# Step 1: Deploy Gateway + Cognito (no target, no interceptor)
+# Set O_CREDENTIAL_PROVIDER_ARN=NONE and O_INTERCEPTOR_ARN=NONE in environment.sh
 make gateway.deploy
 # Record stack outputs in environment.sh
 
@@ -176,7 +177,8 @@ make runtime.deploy
 # Step 4: Verify Runtime with JWT auth
 make runtime.invoke
 
-# Step 5: Redeploy Gateway (creates GatewayTarget with OAuth)
+# Step 5: Redeploy Gateway (creates GatewayTarget with OAuth + attaches interceptor)
+# Set O_CREDENTIAL_PROVIDER_ARN and O_INTERCEPTOR_ARN to real values in environment.sh
 make gateway.deploy
 
 # Step 6: Test end-to-end through Gateway
@@ -191,6 +193,20 @@ Credential provider must be deleted before the Gateway stack:
 make gateway.setup.delete            # delete credential provider (API)
 make gateway.delete                  # delete Gateway stack (CFN)
 ```
+
+## Sub-Project 2, Phase 3: Request Interceptor on Gateway
+
+The Lambda interceptor from Sub-Project 1 is attached to the Gateway via the `InterceptorConfigurations` property. The interceptor runs on every REQUEST, inspects the MCP method, and adds a custom header (`X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo`) only on `tools/call` requests. Other methods pass through unchanged.
+
+The interceptor is configured conditionally: when `O_INTERCEPTOR_ARN` is set to a real Lambda ARN, it is attached; when set to `NONE`, the Gateway operates without an interceptor.
+
+### Verification
+
+Interceptor behavior is verified via the Lambda's CloudWatch logs (`/aws/lambda/interceptors-demo-interceptor`):
+- `initialize` and `tools/list` requests: passthrough, no header added
+- `tools/call` requests: header `X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo: intercepted-at-<ISO-timestamp>` added
+
+The runtime's `RequestHeaderAllowlist` in `runtime.yaml` permits the custom header to pass through to the MCP server.
 
 ## Configuration
 
@@ -234,5 +250,6 @@ The runtime's `RequestHeaderAllowlist` in `runtime.yaml` must explicitly include
 - [Header propagation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-headers.html)
 - [Runtime header allowlist](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-header-allowlist.html)
 - [CFN: AWS::BedrockAgentCore::Gateway](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-gateway.html)
+- [CFN: Gateway InterceptorConfiguration](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-bedrockagentcore-gateway-interceptorconfiguration.html)
 - [CFN: AWS::BedrockAgentCore::GatewayTarget](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-gatewaytarget.html)
 - [CFN: AWS::BedrockAgentCore::Runtime](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-runtime.html)

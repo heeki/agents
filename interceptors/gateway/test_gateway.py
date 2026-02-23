@@ -5,7 +5,7 @@ import sys
 import requests
 
 
-def send_rpc(url: str, rpc_id: int, method: str, params: dict | None = None, session_id: str | None = None) -> tuple[str, dict]:
+def send_rpc(url: str, rpc_id: int, method: str, params: dict | None = None, session_id: str | None = None) -> tuple[str, dict, dict]:
     payload: dict = {"jsonrpc": "2.0", "id": rpc_id, "method": method}
     if params:
         payload["params"] = params
@@ -18,11 +18,12 @@ def send_rpc(url: str, rpc_id: int, method: str, params: dict | None = None, ses
     r = requests.post(url, json=payload, headers=headers, timeout=60)
     r.raise_for_status()
     sid = r.headers.get("Mcp-Session-Id", session_id or "")
+    resp_headers = dict(r.headers)
     body = r.text
     for line in body.strip().splitlines():
         if line.startswith("data: "):
-            return sid, json.loads(line[6:])
-    return sid, json.loads(body)
+            return sid, json.loads(line[6:]), resp_headers
+    return sid, json.loads(body), resp_headers
 
 
 def main() -> None:
@@ -32,20 +33,26 @@ def main() -> None:
 
     # Initialize
     print("=== initialize ===")
-    session_id, data = send_rpc(args.gateway_url, 1, "initialize", {
+    session_id, data, resp_headers = send_rpc(args.gateway_url, 1, "initialize", {
         "protocolVersion": "2025-03-26",
         "capabilities": {},
         "clientInfo": {"name": "test-gateway-client", "version": "1.0"},
     })
     print(f"Session: {session_id}")
     print(json.dumps(data, indent=2))
+    print("Response headers:")
+    for k, v in resp_headers.items():
+        print(f"  {k}: {v}")
 
     # tools/list
     print("\n=== tools/list ===")
-    _, data = send_rpc(args.gateway_url, 2, "tools/list", session_id=session_id)
+    _, data, resp_headers = send_rpc(args.gateway_url, 2, "tools/list", session_id=session_id)
     tools = data.get("result", {}).get("tools", [])
     for tool in tools:
         print(f"  - {tool['name']}: {tool.get('description', '')}")
+    print("Response headers:")
+    for k, v in resp_headers.items():
+        print(f"  {k}: {v}")
 
     # tools/call hello_world (find qualified name from tools/list)
     tool_name = next(
@@ -53,7 +60,7 @@ def main() -> None:
         tools[0]["name"] if tools else "hello_world",
     )
     print(f"\n=== tools/call {tool_name} ===")
-    _, data = send_rpc(args.gateway_url, 3, "tools/call", {
+    _, data, resp_headers = send_rpc(args.gateway_url, 3, "tools/call", {
         "name": tool_name,
         "arguments": {"name": "World"},
     }, session_id=session_id)
@@ -67,6 +74,9 @@ def main() -> None:
     content = result.get("content", [])
     for item in content:
         print(f"  {item.get('text', item)}")
+    print("Response headers:")
+    for k, v in resp_headers.items():
+        print(f"  {k}: {v}")
 
     print("\nAll tests passed.")
 

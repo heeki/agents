@@ -37,7 +37,7 @@ Self-contained Lambda function and SAM infrastructure for the request intercepto
 
 - **Phase 1**: MCP server on AgentCore Runtime (CloudFormation)
 - **Phase 2**: AgentCore Gateway + GatewayTarget with OAuth (CloudFormation + API for credential provider resource)
-- **Phase 3**: Attach Lambda interceptor to Gateway
+- **Phase 3**: Attach Lambda interceptor to Gateway (CloudFormation `InterceptorConfigurations`)
 
 ---
 
@@ -81,8 +81,12 @@ Self-contained Lambda function and SAM infrastructure for the request intercepto
 - **Deployment**: CloudFormation template (`gateway/iac/gateway.yaml`) + API script (`gateway/setup_oauth.py`)
 - **Resources managed by CFN** (`gateway/iac/gateway.yaml`):
   - Cognito UserPool, UserPoolDomain, ResourceServer, AppClient (for OAuth `client_credentials` flow)
-  - Gateway IAM role (`bedrock-agentcore:*`, `agent-credential-provider:*`, `secretsmanager:GetSecretValue`)
+  - Gateway IAM role (`bedrock-agentcore:*`, `agent-credential-provider:*`, `secretsmanager:GetSecretValue`, `lambda:InvokeFunction`)
   - Gateway (MCP protocol, AuthorizerType: NONE, SearchType: SEMANTIC)
+  - InterceptorConfigurations (conditional on `pInterceptorArn != NONE`):
+    - InterceptionPoints: `REQUEST`
+    - Interceptor: Lambda ARN from Sub-Project 1
+    - InputConfiguration: `PassRequestHeaders: true`
   - GatewayTarget (conditional on `pCredentialProviderArn != NONE`):
     - MCPServer target pointing to AgentCore Runtime endpoint
     - Endpoint URL: `https://bedrock-agentcore.{REGION}.amazonaws.com/runtimes/{URL_ENCODED_ARN}/invocations?qualifier=DEFAULT`
@@ -126,7 +130,7 @@ The Gateway-to-Runtime authentication uses Cognito OAuth2:
 
 ### Interceptor Lambda Input (REQUEST)
 
-Headers are included because `passRequestHeaders: true` is configured.
+Headers are included because `InputConfiguration.PassRequestHeaders: true` is configured on the Gateway's `InterceptorConfigurations`.
 
 ```json
 {
@@ -295,9 +299,18 @@ make gateway.invoke
 
 ### Sub-Project 2, Phase 3: Attach Interceptor to Gateway
 
+The interceptor is attached to the Gateway via the `InterceptorConfigurations` property in the same CFN template. Set `O_INTERCEPTOR_ARN` in `environment.sh` before deploying.
+
 ```bash
-# TBD: Add interceptor configuration to Gateway
+# Set O_INTERCEPTOR_ARN to the Lambda function ARN in environment.sh
+make gateway.deploy                  # updates Gateway with InterceptorConfigurations
+make gateway.invoke                  # test end-to-end (interceptor adds header on tools/call)
 ```
+
+Verification via interceptor Lambda CloudWatch logs (`/aws/lambda/interceptors-demo-interceptor`):
+- `initialize`: passthrough, no header added
+- `tools/list`: passthrough, no header added
+- `tools/call`: adds `X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo: intercepted-at-<ISO-timestamp>`
 
 ---
 
@@ -311,12 +324,13 @@ Trust policy for `bedrock-agentcore.amazonaws.com` with `lambda:InvokeFunction` 
 
 Trust policy for `bedrock-agentcore.amazonaws.com` with CloudWatch Logs permissions.
 
-### Gateway Role (Sub-Project 2, Phase 2)
+### Gateway Role (Sub-Project 2, Phase 2 + 3)
 
 Trust policy for `bedrock-agentcore.amazonaws.com` with:
 - `bedrock-agentcore:*` — broad AgentCore permissions (required for OAuth token exchange; scoped actions like `InvokeAgentRuntime` + `GetWorkloadAccessToken` + `GetResourceOauth2Token` are insufficient)
 - `agent-credential-provider:*` — credential provider token exchange (required for Gateway to obtain OAuth tokens)
 - `secretsmanager:GetSecretValue` — read credential provider secrets
+- `lambda:InvokeFunction` — invoke the interceptor Lambda (Phase 3)
 
 ---
 
@@ -373,5 +387,6 @@ Constraints:
 - [Runtime header allowlist](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-header-allowlist.html)
 - [Gateway target MCPServers](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-MCPservers.html)
 - [CloudFormation: AWS::BedrockAgentCore::Gateway](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-gateway.html)
+- [CloudFormation: Gateway InterceptorConfiguration](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-bedrockagentcore-gateway-interceptorconfiguration.html)
 - [CloudFormation: AWS::BedrockAgentCore::GatewayTarget](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-gatewaytarget.html)
 - [CloudFormation: AWS::BedrockAgentCore::Runtime](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-runtime.html)

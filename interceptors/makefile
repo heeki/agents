@@ -114,6 +114,7 @@ gateway.deploy:
 			pRuntimeId=$(O_RUNTIME_ID) \
 			pCredentialProviderArn=$(O_CREDENTIAL_PROVIDER_ARN) \
 			pCognitoDomain=$(P_COGNITO_DOMAIN) \
+			pInterceptorArn=$(O_INTERCEPTOR_ARN) \
 		--capabilities CAPABILITY_NAMED_IAM \
 		--no-confirm-changeset
 

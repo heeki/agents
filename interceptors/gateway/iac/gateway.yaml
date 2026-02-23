@@ -25,9 +25,14 @@ Parameters:
     Type: String
     Description: Cognito UserPool domain prefix (must be globally unique)
     Default: "interceptors-demo-gateway"
+  pInterceptorArn:
+    Type: String
+    Description: Lambda interceptor function ARN (NONE to skip)
+    Default: "NONE"
 
 Conditions:
   HasCredentialProvider: !Not [!Equals [!Ref pCredentialProviderArn, "NONE"]]
+  HasInterceptor: !Not [!Equals [!Ref pInterceptorArn, "NONE"]]
 
 Resources:
   # Cognito resources for OAuth2 client_credentials flow
@@ -96,6 +101,7 @@ Resources:
                   - bedrock-agentcore:*
                   - agent-credential-provider:*
                   - secretsmanager:GetSecretValue
+                  - lambda:InvokeFunction
                 Resource: "*"
 
   # Gateway
@@ -113,6 +119,16 @@ Resources:
       AuthorizerType: NONE
       Description: Gateway for interceptors demo
       RoleArn: !GetAtt GatewayRole.Arn
+      InterceptorConfigurations: !If
+        - HasInterceptor
+        - - InterceptionPoints:
+              - REQUEST
+            Interceptor:
+              Lambda:
+                Arn: !Ref pInterceptorArn
+            InputConfiguration:
+              PassRequestHeaders: true
+        - !Ref AWS::NoValue
 
   # Gateway target (only created when credential provider ARN is set)
   GatewayTarget:
