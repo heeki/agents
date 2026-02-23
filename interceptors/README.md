@@ -39,9 +39,10 @@ interceptors/
       interceptor.yaml                # SAM template (Lambda + Gateway service role)
   app/
     mcpserver/                        # Sub-project 2, Phase 1: MCP server
-      main.py                         # FastMCP hello_world server
-      requirements.txt                # Python dependencies (mcp[cli])
+      main.py                         # FastMCP hello_world server (reads interceptor headers)
+      requirements.txt                # Python dependencies (mcp[cli], uvicorn)
       test_runtime.py                 # Test script (SigV4 and JWT modes)
+      setup_observability.py          # CloudWatch Logs delivery pipeline management (API)
       iac/
         runtime.yaml                  # CFN template (AgentCore Runtime + IAM role + JWT auth)
   gateway/                            # Sub-project 2, Phase 2: Gateway
@@ -107,6 +108,10 @@ Stateless MCP server deployed to AgentCore Runtime via CloudFormation. Exposes a
 | `runtime.deploy` | SAM deploy the AgentCore Runtime stack (references S3 artifact) |
 | `runtime.delete` | SAM delete the AgentCore Runtime stack |
 | `runtime.invoke` | Test deployed runtime via JWT Bearer token (initialize, tools/list, tools/call) |
+| `runtime.observability` | Create CloudWatch Logs delivery pipeline for runtime application logs |
+| `runtime.observability.delete` | Delete CloudWatch Logs delivery pipeline |
+| `runtime.observability.get` | Get delivery pipeline details |
+| `runtime.logs` | Tail runtime application logs from CloudWatch |
 | `runtime.status` | Check runtime status via boto3 |
 
 ### Workflow
@@ -116,6 +121,8 @@ make runtime.package                 # zip + upload to S3
 make runtime.deploy                  # deploy CloudFormation stack
 make runtime.status                  # verify runtime is READY
 make runtime.invoke                  # run test script (JWT auth)
+make runtime.observability           # create CloudWatch Logs delivery pipeline
+make runtime.logs                    # tail application logs
 ```
 
 ### Packaging Details
@@ -177,21 +184,29 @@ make runtime.deploy
 # Step 4: Verify Runtime with JWT auth
 make runtime.invoke
 
-# Step 5: Redeploy Gateway (creates GatewayTarget with OAuth + attaches interceptor)
+# Step 5: Create CloudWatch Logs delivery pipeline for runtime observability
+make runtime.observability
+
+# Step 6: Redeploy Gateway (creates GatewayTarget with OAuth + attaches interceptor)
 # Set O_CREDENTIAL_PROVIDER_ARN and O_INTERCEPTOR_ARN to real values in environment.sh
 make gateway.deploy
 
-# Step 6: Test end-to-end through Gateway
+# Step 7: Test end-to-end through Gateway
 make gateway.invoke
+
+# Step 8: Verify runtime logs
+make runtime.logs
 ```
 
 ### Teardown
 
-Credential provider must be deleted before the Gateway stack:
+API-managed resources must be deleted before their CloudFormation stacks:
 
 ```bash
+make runtime.observability.delete    # delete log delivery pipeline (API)
 make gateway.setup.delete            # delete credential provider (API)
 make gateway.delete                  # delete Gateway stack (CFN)
+make runtime.delete                  # delete Runtime stack (CFN)
 ```
 
 ## Sub-Project 2, Phase 3: Request Interceptor on Gateway
@@ -202,11 +217,28 @@ The interceptor is configured conditionally: when `O_INTERCEPTOR_ARN` is set to 
 
 ### Verification
 
-Interceptor behavior is verified via the Lambda's CloudWatch logs (`/aws/lambda/interceptors-demo-interceptor`):
-- `initialize` and `tools/list` requests: passthrough, no header added
-- `tools/call` requests: header `X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo: intercepted-at-<ISO-timestamp>` added
+Interceptor behavior is verified at multiple layers:
 
-The runtime's `RequestHeaderAllowlist` in `runtime.yaml` permits the custom header to pass through to the MCP server.
+1. **Interceptor Lambda logs** (`/aws/lambda/interceptors-demo-interceptor`):
+   - `initialize` and `tools/list` requests: passthrough, no header added
+   - `tools/call` requests: header `X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo: intercepted-at-<ISO-timestamp>` added
+
+2. **MCP server tool response** (`make gateway.invoke`):
+   - The `hello_world` tool reads the custom header via `ctx.request_context.request.headers` and returns the value in the `interceptor_header` field
+   - Confirms the header propagated through: Interceptor Lambda -> Gateway -> GatewayTarget -> Runtime -> MCP server
+
+3. **Runtime application logs** (`make runtime.logs`):
+   - Structured OTEL logs show each MCP method call (initialize, notifications/initialized, tools/call) with request payloads, trace IDs, and session IDs
+
+### Header Propagation Chain
+
+For the custom header to reach the MCP server tool handler, three configurations are required:
+
+1. **GatewayTarget `MetadataConfiguration.AllowedRequestHeaders`** — tells the Gateway to forward the header to the target
+2. **Runtime `RequestHeaderAllowlist`** — tells the Runtime to pass the header to the application container
+3. **MCP server code** — reads the header via `ctx.request_context.request.headers`
+
+Without `AllowedRequestHeaders` on the GatewayTarget, the Gateway strips the custom header even though the interceptor added it.
 
 ## Configuration
 
@@ -231,7 +263,32 @@ All parameters are managed in `etc/environment.sh`:
 
 Custom headers forwarded to AgentCore Runtime must use the prefix `X-Amzn-Bedrock-AgentCore-Runtime-Custom-`. Headers not matching this prefix are stripped by the Runtime.
 
-The runtime's `RequestHeaderAllowlist` in `runtime.yaml` must explicitly include any custom headers the interceptor injects.
+For end-to-end header propagation through the Gateway:
+1. **GatewayTarget `MetadataConfiguration.AllowedRequestHeaders`** — required for the Gateway to forward interceptor-added headers to the target
+2. **GatewayTarget `MetadataConfiguration.AllowedResponseHeaders`** — required for the Gateway to forward response headers from the target back to the client
+3. **Runtime `RequestHeaderAllowlist`** — required for the Runtime to pass headers to the application container
+
+## Observability
+
+AgentCore Runtime does not emit application logs to CloudWatch by default. Two log groups exist:
+
+### Vended Delivery Pipeline (API-managed)
+
+A CloudWatch Logs vended delivery pipeline captures structured OTEL logs at the infrastructure level — MCP request/response payloads, trace IDs, session IDs, and request IDs. This must be created via API (no CFN resource exists).
+
+```bash
+make runtime.observability           # create delivery pipeline (one-time)
+make runtime.logs                    # tail application logs
+make runtime.observability.delete    # cleanup before deleting runtime
+```
+
+Log group: `/aws/vendedlogs/bedrock-agentcore/runtime/APPLICATION_LOGS/<runtime-id>`
+
+### OTEL Sidecar Log Group (auto-created)
+
+The runtime infrastructure creates a log group at `/aws/bedrock-agentcore/runtimes/<runtime-name>-<id>-DEFAULT` with stream `otel-rt-logs`. This group is intended for application-level OTEL logs but requires the `opentelemetry-instrument` wrapper to populate. The runtime container pre-configures OTEL env vars (`OTEL_PYTHON_DISTRO=aws_distro`, `OTEL_PYTHON_CONFIGURATOR=aws_configurator`, `OTEL_EXPORTER_OTLP_LOGS_HEADERS` with log group routing), but these only take effect when the application is started via `opentelemetry-instrument python main.py`. Code configuration's EntryPoint only accepts `["main.py"]` format (multi-command format fails CFN validation), so this log group remains empty for code-configuration-based deployments. The OTEL sidecar also does not expose an OTLP receiver on localhost, so programmatic OTEL SDK export is not an alternative.
+
+Python `logging` module output is not captured by either log group.
 
 ## Known Issues
 
@@ -253,3 +310,4 @@ The runtime's `RequestHeaderAllowlist` in `runtime.yaml` must explicitly include
 - [CFN: Gateway InterceptorConfiguration](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-bedrockagentcore-gateway-interceptorconfiguration.html)
 - [CFN: AWS::BedrockAgentCore::GatewayTarget](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-gatewaytarget.html)
 - [CFN: AWS::BedrockAgentCore::Runtime](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-runtime.html)
+- [Runtime observability](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-configure.html)

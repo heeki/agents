@@ -91,6 +91,33 @@ runtime.invoke:
 		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
 		--scope "https://$(P_GATEWAY_NAME).agentcore.local/invoke"
 
+runtime.observability:
+	python3 app/mcpserver/setup_observability.py \
+		--action create \
+		--region $(REGION) \
+		--runtime-arn $(O_RUNTIME_ARN) \
+		--runtime-id $(O_RUNTIME_ID) \
+		--account-id $(ACCOUNTID)
+
+runtime.observability.delete:
+	python3 app/mcpserver/setup_observability.py \
+		--action delete \
+		--region $(REGION) \
+		--runtime-id $(O_RUNTIME_ID)
+
+runtime.observability.get:
+	python3 app/mcpserver/setup_observability.py \
+		--action get \
+		--region $(REGION) \
+		--runtime-id $(O_RUNTIME_ID)
+
+runtime.logs:
+	aws logs tail \
+		"/aws/vendedlogs/bedrock-agentcore/runtime/APPLICATION_LOGS/$(O_RUNTIME_ID)" \
+		--since 5m \
+		--profile $(PROFILE) \
+		--region $(REGION)
+
 runtime.status:
 	python3 -c "\
 	import boto3, json; \

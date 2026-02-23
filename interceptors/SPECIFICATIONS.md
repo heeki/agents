@@ -66,13 +66,16 @@ Self-contained Lambda function and SAM infrastructure for the request intercepto
 
 - **Framework**: `mcp.server.fastmcp.FastMCP` with `streamable-http` transport
 - **Protocol**: MCP (`stateless_http=True`)
-- **Tool**: `hello_world` — accepts a `name: str` parameter and returns a greeting
-- **Logging**: On every tool invocation, logs headers and payload
+- **Tool**: `hello_world` — accepts a `name: str` parameter, reads the custom interceptor header via `ctx.request_context.request.headers`, and returns the greeting + header value
+- **ASGI middleware**: `HeaderEchoMiddleware` wraps the Starlette app to echo the interceptor request header back as a response header
+- **Server startup**: Uses `mcp.streamable_http_app()` + middleware + `uvicorn.run()` instead of `mcp.run()`
+- **Logging**: On every tool invocation, logs request headers and interceptor header value
 - **Build**: Zip package uploaded to S3 (md5-based naming)
 - **Auth**: CustomJWTAuthorizer (Cognito OIDC discovery URL, AllowedClients)
 - **Network**: PUBLIC
 - **Header allowlist**: `X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo`
 - **IaC**: CloudFormation template (`app/mcpserver/iac/runtime.yaml`)
+- **Observability**: CloudWatch Logs delivery pipeline created via API (`app/mcpserver/setup_observability.py`)
 
 ### 3. AgentCore Gateway — Sub-Project 2, Phase 2
 
@@ -91,6 +94,8 @@ Self-contained Lambda function and SAM infrastructure for the request intercepto
     - MCPServer target pointing to AgentCore Runtime endpoint
     - Endpoint URL: `https://bedrock-agentcore.{REGION}.amazonaws.com/runtimes/{URL_ENCODED_ARN}/invocations?qualifier=DEFAULT`
     - `CredentialProviderConfigurations` referencing the OAuth2 credential provider ARN with scope
+    - `MetadataConfiguration.AllowedRequestHeaders` — forwards the custom interceptor header from Gateway to Runtime
+    - `MetadataConfiguration.AllowedResponseHeaders` — forwards custom response headers from Runtime back to client
 - **Resource managed by API** (`gateway/setup_oauth.py`):
   - OAuth2 Credential Provider — no CFN resource type exists for this; created via `create_oauth2_credential_provider` API call
   - Stores the Cognito client ID and client secret for the `client_credentials` grant
@@ -228,9 +233,10 @@ interceptors/
       interceptor.yaml                # SAM template (Lambda + Gateway service role)
   app/
     mcpserver/                        # Sub-project 2, Phase 1: MCP server
-      main.py                         # FastMCP hello_world server
-      requirements.txt                # Python dependencies
+      main.py                         # FastMCP hello_world server (reads interceptor headers)
+      requirements.txt                # Python dependencies (mcp[cli], uvicorn)
       test_runtime.py                 # Test script (SigV4 and JWT modes)
+      setup_observability.py          # CloudWatch Logs delivery pipeline management (API)
       iac/
         runtime.yaml                  # CloudFormation template (Runtime + IAM role)
   gateway/                            # Sub-project 2, Phase 2: Gateway
@@ -357,10 +363,55 @@ Trust policy for `bedrock-agentcore.amazonaws.com` with:
 
 Custom headers forwarded to AgentCore Runtime **must** use the prefix `X-Amzn-Bedrock-AgentCore-Runtime-Custom-`. Headers not matching this prefix (or `Authorization`) are stripped by the Runtime.
 
+For end-to-end header propagation through the Gateway, three configurations are required:
+
+1. **GatewayTarget `MetadataConfiguration.AllowedRequestHeaders`** — tells the Gateway to forward the header to the target (required even for interceptor-injected headers)
+2. **Runtime `RequestHeaderAllowlist`** — tells the Runtime to pass the header to the application container
+3. **MCP server code** — reads the header via `ctx.request_context.request.headers` (Starlette Request)
+
+For response header propagation:
+1. **MCP server code** — sets response headers via ASGI middleware wrapping `mcp.streamable_http_app()`
+2. **GatewayTarget `MetadataConfiguration.AllowedResponseHeaders`** — tells the Gateway to forward the header back to the client
+
 Constraints:
 - Max header value size: 4KB
 - Max 20 custom headers per runtime
 - Headers must be added to the Runtime's `RequestHeaderAllowlist` in the CloudFormation template
+
+## Observability
+
+AgentCore Runtime does not emit application logs to CloudWatch by default. Two log groups exist per runtime:
+
+### Vended Delivery Pipeline (API-managed)
+
+Captures structured OTEL logs at the infrastructure level.
+
+- **Script**: `app/mcpserver/setup_observability.py` — creates/deletes CloudWatch Logs delivery source, destination, and delivery
+- **Log group**: `/aws/vendedlogs/bedrock-agentcore/runtime/APPLICATION_LOGS/<runtime-id>`
+- **Log type**: Structured OTEL logs with request payloads, trace IDs, session IDs, span IDs, and request IDs
+- **Scope**: MCP request/response payloads at the infrastructure level
+- **Cleanup**: Must be deleted before deleting the runtime stack
+
+```bash
+make runtime.observability           # create delivery pipeline (one-time)
+make runtime.logs                    # tail application logs
+make runtime.observability.delete    # cleanup
+```
+
+### OTEL Sidecar Log Group (auto-created, empty for code configuration)
+
+The runtime infrastructure auto-creates a log group for application-level OTEL telemetry.
+
+- **Log group**: `/aws/bedrock-agentcore/runtimes/<runtime-name>-<id>-DEFAULT`
+- **Log stream**: `otel-rt-logs`
+- **Status**: Empty (0 stored bytes) for code-configuration-based deployments
+- **Why empty**: The runtime container sets OTEL env vars (`OTEL_PYTHON_DISTRO=aws_distro`, `OTEL_PYTHON_CONFIGURATOR=aws_configurator`, `OTEL_EXPORTER_OTLP_LOGS_HEADERS` with log group/stream routing) that only take effect when the application is bootstrapped via `opentelemetry-instrument python main.py`. Code configuration's EntryPoint property only accepts single-script format (`["main.py"]`); multi-command format (`["opentelemetry-instrument", "python", "main.py"]`) fails with `AWS::EarlyValidation::PropertyValidation`.
+- **No OTLP receiver**: The OTEL sidecar does not expose an OTLP receiver on localhost (neither HTTP:4318 nor gRPC:4317), so programmatic OTEL SDK export from application code is not a workaround. gRPC export to localhost:4317 blocks indefinitely and causes request timeouts.
+- **Implication**: Container runtime deployments (as opposed to code configuration) may support the `opentelemetry-instrument` entry point format, which would populate this log group.
+
+### Python `logging` Module
+
+Python `logging` module output (e.g., `logger.info()`) is not captured by either log group. It is only visible in the container's stdout/stderr, which is not surfaced to CloudWatch for code-configuration-based deployments.
 
 ---
 
@@ -376,6 +427,10 @@ Constraints:
 
 5. **Gateway `SearchType: SEMANTIC` requires no targets**: The `SearchType` property on the Gateway cannot be changed while targets exist. To modify, first deploy with `pCredentialProviderArn=NONE` to delete the target, then update the Gateway, then redeploy with the real ARN.
 
+6. **Runtime logging requires API-managed delivery pipeline**: No CFN resource exists for CloudWatch Logs vended delivery. The delivery pipeline must be created via API (`setup_observability.py`). The vended logs capture structured OTEL logs (MCP request payloads), not Python `logging` output. The OTEL sidecar log group (`otel-rt-logs`) requires `opentelemetry-instrument` bootstrap, which code configuration's EntryPoint does not support.
+
+7. **GatewayTarget `AllowedRequestHeaders` required for interceptor headers**: Even though the interceptor adds a custom header to the request, the Gateway strips it before forwarding to the target unless the header is listed in `MetadataConfiguration.AllowedRequestHeaders` on the GatewayTarget.
+
 ---
 
 ## References
@@ -390,3 +445,4 @@ Constraints:
 - [CloudFormation: Gateway InterceptorConfiguration](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-bedrockagentcore-gateway-interceptorconfiguration.html)
 - [CloudFormation: AWS::BedrockAgentCore::GatewayTarget](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-gatewaytarget.html)
 - [CloudFormation: AWS::BedrockAgentCore::Runtime](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-runtime.html)
+- [Runtime observability](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-configure.html)

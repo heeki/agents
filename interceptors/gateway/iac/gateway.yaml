@@ -150,6 +150,11 @@ Resources:
               ProviderArn: !Ref pCredentialProviderArn
               Scopes:
                 - !Sub "https://${pGatewayName}.agentcore.local/invoke"
+      MetadataConfiguration:
+        AllowedRequestHeaders:
+          - x-amzn-bedrock-agentcore-runtime-custom-interceptor-demo
+        AllowedResponseHeaders:
+          - x-amzn-bedrock-agentcore-runtime-custom-interceptor-demo
 
 Outputs:
   oGatewayArn:
