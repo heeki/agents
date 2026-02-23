@@ -1,0 +1,75 @@
+import argparse
+import json
+import sys
+
+import requests
+
+
+def send_rpc(url: str, rpc_id: int, method: str, params: dict | None = None, session_id: str | None = None) -> tuple[str, dict]:
+    payload: dict = {"jsonrpc": "2.0", "id": rpc_id, "method": method}
+    if params:
+        payload["params"] = params
+    headers: dict[str, str] = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+    if session_id:
+        headers["Mcp-Session-Id"] = session_id
+    r = requests.post(url, json=payload, headers=headers, timeout=60)
+    r.raise_for_status()
+    sid = r.headers.get("Mcp-Session-Id", session_id or "")
+    body = r.text
+    for line in body.strip().splitlines():
+        if line.startswith("data: "):
+            return sid, json.loads(line[6:])
+    return sid, json.loads(body)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Test MCP server through AgentCore Gateway")
+    parser.add_argument("gateway_url", help="AgentCore Gateway MCP endpoint URL")
+    args = parser.parse_args()
+
+    # Initialize
+    print("=== initialize ===")
+    session_id, data = send_rpc(args.gateway_url, 1, "initialize", {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {},
+        "clientInfo": {"name": "test-gateway-client", "version": "1.0"},
+    })
+    print(f"Session: {session_id}")
+    print(json.dumps(data, indent=2))
+
+    # tools/list
+    print("\n=== tools/list ===")
+    _, data = send_rpc(args.gateway_url, 2, "tools/list", session_id=session_id)
+    tools = data.get("result", {}).get("tools", [])
+    for tool in tools:
+        print(f"  - {tool['name']}: {tool.get('description', '')}")
+
+    # tools/call hello_world (find qualified name from tools/list)
+    tool_name = next(
+        (t["name"] for t in tools if "hello_world" in t["name"]),
+        tools[0]["name"] if tools else "hello_world",
+    )
+    print(f"\n=== tools/call {tool_name} ===")
+    _, data = send_rpc(args.gateway_url, 3, "tools/call", {
+        "name": tool_name,
+        "arguments": {"name": "World"},
+    }, session_id=session_id)
+    if "error" in data:
+        print(f"  Error: {data['error'].get('message', data['error'])}")
+        sys.exit(1)
+    result = data.get("result", {})
+    if result.get("isError"):
+        print(f"  Server error: {result.get('content', [{}])[0].get('text', 'unknown')}")
+        sys.exit(1)
+    content = result.get("content", [])
+    for item in content:
+        print(f"  {item.get('text', item)}")
+
+    print("\nAll tests passed.")
+
+
+if __name__ == "__main__":
+    main()

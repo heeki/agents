@@ -10,27 +10,34 @@ Build a prototype demonstrating Lambda-based request interceptors on AgentCore G
 MCP Client
     |
     |--- Direct path ---> AgentCore Runtime (MCP Server)
+    |                       Auth: JWT Bearer token (Cognito)
     |
-    |--- Gateway path --> AgentCore Gateway
+    |--- Gateway path --> AgentCore Gateway (AuthorizerType: NONE)
                               |
                               +--> Request Interceptor (Lambda)
                               |        On tools/call: adds header
                               |        X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo
                               |        On other methods: passes through unchanged
                               |
+                              +--> GatewayTarget (MCPServer type)
+                              |        OAuth credential provider (Cognito client_credentials)
+                              |
                               +--> AgentCore Runtime (MCP Server)
+                                       Auth: CustomJWTAuthorizer (Cognito)
                                        Logs custom header + full payload
 ```
 
 ## Projects
 
-### Sub-Project 1: Lambda Interceptor (`interceptor/` + `iac/`)
+### Sub-Project 1: Lambda Interceptor (`interceptor/`)
 
 Self-contained Lambda function and SAM infrastructure for the request interceptor.
 
-### Sub-Project 2: AgentCore Resources (`agentcore/` + `app/`)
+### Sub-Project 2: AgentCore Resources (`app/`, `gateway/`)
 
-AgentCore Runtime (MCP server), Gateway, and target configuration managed primarily via the AgentCore CLI.
+- **Phase 1**: MCP server on AgentCore Runtime (CloudFormation)
+- **Phase 2**: AgentCore Gateway + GatewayTarget with OAuth (CloudFormation + API for credential provider resource)
+- **Phase 3**: Attach Lambda interceptor to Gateway
 
 ---
 
@@ -49,69 +56,69 @@ AgentCore Runtime (MCP server), Gateway, and target configuration managed primar
   - If method is anything else (e.g., `tools/list`, `initialize`):
     - Passes through with no header additions
   - Always passes the original request body through unchanged in `transformedGatewayRequest.body`
-- **Deployment**: SAM template (`iac/interceptor.yaml`)
+- **Deployment**: SAM template (`interceptor/iac/interceptor.yaml`)
 - **IAM**: SAM template also creates the AgentCore Gateway service role with:
   - Trust policy for `bedrock-agentcore.amazonaws.com`
   - `lambda:InvokeFunction` permission scoped to the interceptor function ARN
-- **Test**: Local test invoke via `sam local invoke` with a sample event
+- **Test**: Local test invoke via `sam local invoke` with sample events
 
-### 2. MCP Server (Python, deployed to AgentCore Runtime) — Sub-Project 2
+### 2. MCP Server (Python, deployed to AgentCore Runtime) — Sub-Project 2, Phase 1
 
 - **Framework**: `mcp.server.fastmcp.FastMCP` with `streamable-http` transport
-- **Protocol**: MCP
+- **Protocol**: MCP (`stateless_http=True`)
 - **Tool**: `hello_world` — accepts a `name: str` parameter and returns a greeting
-- **Logging**: On every tool invocation, logs:
-  - The full incoming HTTP request headers (to show the custom header when present)
-  - The full event payload
-- **Header access**: Via `RequestContext.request_headers` (AgentCore Runtime injects allowed headers)
-- **Build**: CodeZip (managed by AgentCore CLI via `agentcore.json`)
-- **Auth**: None (prototype only)
+- **Logging**: On every tool invocation, logs headers and payload
+- **Build**: Zip package uploaded to S3 (md5-based naming)
+- **Auth**: CustomJWTAuthorizer (Cognito OIDC discovery URL, AllowedClients)
 - **Network**: PUBLIC
-- **Header allowlist**: Configure `request_header_allowlist` to include `X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo` via `agentcore configure --request-header-allowlist` or `.bedrock_agentcore.yaml`
+- **Header allowlist**: `X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo`
+- **IaC**: CloudFormation template (`app/mcpserver/iac/runtime.yaml`)
 
-### 3. AgentCore Gateway — Sub-Project 2
+### 3. AgentCore Gateway — Sub-Project 2, Phase 2
 
-- **Protocol**: MCP
-- **Auth**: NONE (prototype only)
-- **Deployment**: `agentcore create_mcp_gateway` CLI command (not via `mcp.json`/`agentcore deploy`)
-- **Phase 2 (no interceptor)**:
-  ```bash
-  agentcore create_mcp_gateway \
-    --region us-east-1 \
-    --name interceptors-demo-gateway \
-    --role-arn <gateway-service-role-arn>
-  ```
-- **Phase 3 (with interceptor)**: Recreate the gateway with interceptor configuration:
-  ```bash
-  agentcore create_mcp_gateway \
-    --region us-east-1 \
-    --name interceptors-demo-gateway \
-    --role-arn <gateway-service-role-arn> \
-    --interceptor-configurations '[{
-      "interceptor": {
-        "lambda": {
-          "arn": "<interceptor-lambda-arn>"
-        }
-      },
-      "interceptionPoints": ["REQUEST"],
-      "inputConfiguration": {
-        "passRequestHeaders": true
-      }
-    }]'
-  ```
-- **Target**: Added via `agentcore add target` (preferred) or boto3 `create_gateway_target` (fallback)
-  - Target type: `mcpServer` pointing to the AgentCore Runtime endpoint
-  - No authorization configuration
+- **Protocol**: MCP (supportedVersions: `2025-03-26`, searchType: `SEMANTIC`)
+- **Auth**: NONE (no client authentication required)
+- **Deployment**: CloudFormation template (`gateway/iac/gateway.yaml`) + API script (`gateway/setup_oauth.py`)
+- **Resources managed by CFN** (`gateway/iac/gateway.yaml`):
+  - Cognito UserPool, UserPoolDomain, ResourceServer, AppClient (for OAuth `client_credentials` flow)
+  - Gateway IAM role (`bedrock-agentcore:*`, `agent-credential-provider:*`, `secretsmanager:GetSecretValue`)
+  - Gateway (MCP protocol, AuthorizerType: NONE, SearchType: SEMANTIC)
+  - GatewayTarget (conditional on `pCredentialProviderArn != NONE`):
+    - MCPServer target pointing to AgentCore Runtime endpoint
+    - Endpoint URL: `https://bedrock-agentcore.{REGION}.amazonaws.com/runtimes/{URL_ENCODED_ARN}/invocations?qualifier=DEFAULT`
+    - `CredentialProviderConfigurations` referencing the OAuth2 credential provider ARN with scope
+- **Resource managed by API** (`gateway/setup_oauth.py`):
+  - OAuth2 Credential Provider — no CFN resource type exists for this; created via `create_oauth2_credential_provider` API call
+  - Stores the Cognito client ID and client secret for the `client_credentials` grant
+  - Must be created before the GatewayTarget can reference it, and deleted before the Gateway stack is torn down
 
-### 4. MCP Test Client — Sub-Project 2
+### 4. OAuth Authentication Flow
 
-- **Purpose**: Validates end-to-end flow
-- **Tests**:
-  1. **Local**: `agentcore dev --logs` then test with MCP client
-  2. **Direct to Runtime**: `agentcore invoke` to test the deployed MCP server
-  3. **Through Gateway**: Python MCP client connecting to the Gateway MCP endpoint, calling `list_tools` and `hello_world`
-- **Library**: `mcp.client.streamable_http.streamablehttp_client` + `mcp.ClientSession` (for Gateway path)
-- **Verification**: After Gateway test, check CloudWatch logs for the interceptor Lambda and MCP server Runtime
+The Gateway-to-Runtime authentication uses Cognito OAuth2:
+
+1. **Cognito UserPool** (CFN) provides the identity infrastructure
+2. **CognitoResourceServer** (CFN) defines a custom scope (`invoke`)
+3. **CognitoAppClient** (CFN) uses `client_credentials` grant with `GenerateSecret: true`
+4. **OAuth2 Credential Provider** (API) stores the Cognito client ID and secret, configured with the Cognito OIDC discovery URL
+5. **GatewayTarget** (CFN) references the credential provider ARN and scope in its `CredentialProviderConfigurations`
+6. At request time, the Gateway's workload identity uses the credential provider to obtain a JWT token from Cognito
+7. The Gateway forwards the request to the Runtime with the JWT token
+8. **Runtime's CustomJWTAuthorizer** (CFN) validates the token via Cognito's OIDC discovery URL
+
+**Key constraint**: SigV4 and JWT auth are mutually exclusive on a Runtime. When JWT auth is configured, the SDK's `invoke_agent_runtime` (which uses SigV4) no longer works. Direct invocation requires JWT Bearer tokens via HTTP.
+
+**Key constraint**: Cognito access tokens from `client_credentials` grant do NOT include an `aud` claim. The runtime's `AllowedAudience` field must NOT be set; use `AllowedClients` to validate the `client_id` claim instead.
+
+**Key constraint**: The Gateway IAM role must include `agent-credential-provider:*` in addition to `bedrock-agentcore:*` for the OAuth token exchange to succeed at request time.
+
+### 5. MCP Test Clients — Sub-Project 2
+
+- **Runtime test** (`app/mcpserver/test_runtime.py`): Tests direct runtime invocation
+  - SigV4 mode: uses boto3 SDK (when runtime has no JWT auth)
+  - JWT mode: uses HTTP + Bearer token (when runtime has JWT auth)
+- **Gateway test** (`gateway/test_gateway.py`): Tests end-to-end Gateway flow
+  - Uses plain HTTP (no auth, since Gateway AuthorizerType: NONE)
+  - Tool names are qualified with target prefix (e.g., `interceptors-demo-mcpserver___hello_world`)
 
 ---
 
@@ -203,30 +210,30 @@ Headers are included because `passRequestHeaders: true` is configured.
 interceptors/
   CLAUDE.md
   SPECIFICATIONS.md
-  README.md                           # Deployed configurations and test results
+  README.md
   makefile
   etc/
-    environment.sh                    # Configurable parameters
+    environment.sh                    # Configurable parameters and stack outputs
   interceptor/                        # Sub-project 1: Lambda interceptor
     fn/
       handler.py                      # Lambda interceptor function
     events/
-      test_event.json                 # Sample interceptor input event for testing
+      test_tools_call.json            # Sample tools/call event
+      test_tools_list.json            # Sample tools/list event
     iac/
       interceptor.yaml                # SAM template (Lambda + Gateway service role)
-  agentcore/                          # Sub-project 2: AgentCore resources (managed by CLI)
-    agentcore.json                    # Project spec (MCP server agent definition)
-    aws-targets.json                  # Deployment targets (account, region)
-    .bedrock_agentcore.yaml           # Runtime config (header allowlist)
-    .env.local                        # Local env vars
-    cdk/                              # CDK infrastructure (auto-generated by CLI)
   app/
-    mcpserver/                        # MCP server code (referenced by agentcore.json)
+    mcpserver/                        # Sub-project 2, Phase 1: MCP server
       main.py                         # FastMCP hello_world server
-      pyproject.toml                  # Python dependencies
-  client/
-    test_client.py                    # MCP test client for Gateway path
-    requirements.txt                  # Client dependencies
+      requirements.txt                # Python dependencies
+      test_runtime.py                 # Test script (SigV4 and JWT modes)
+      iac/
+        runtime.yaml                  # CloudFormation template (Runtime + IAM role)
+  gateway/                            # Sub-project 2, Phase 2: Gateway
+    iac/
+      gateway.yaml                    # CloudFormation template (Gateway + Cognito + Target)
+    setup_oauth.py                    # OAuth2 credential provider management (API)
+    test_gateway.py                   # Test script for Gateway MCP endpoint
 ```
 
 ---
@@ -236,119 +243,80 @@ interceptors/
 ### Sub-Project 1, Phase 1: Interceptor Lambda (SAM)
 
 ```bash
-# Build and deploy the interceptor Lambda + Gateway service role
-make interceptor.build               # sam build
-make interceptor.deploy              # sam deploy
-
-# Test invoke with sample event
-make interceptor.invoke              # sam local invoke with test_event.json
+make interceptor.build
+make interceptor.deploy
+make interceptor.local.tools_call    # verify header injection
+make interceptor.local.tools_list    # verify passthrough
 ```
 
 ### Sub-Project 2, Phase 1: MCP Server on AgentCore Runtime
 
 ```bash
-# Initialize agentcore project
-agentcore create                     # Create agentcore/ config files
-
-# Local development and testing
-agentcore dev --logs                 # Start local MCP server
-# Test list_tools and invoke hello_world locally
-
-# Deploy to AgentCore Runtime
-agentcore deploy --yes --verbose     # Deploy MCP server to Runtime
-agentcore status                     # Get deployed resource IDs
-
-# Test deployed MCP server
-agentcore invoke "Say hello to World" --stream
+make runtime.package                 # zip + upload to S3
+make runtime.deploy                  # deploy CloudFormation stack
+make runtime.status                  # verify runtime is READY
+make runtime.invoke                  # test via JWT Bearer token
 ```
 
-### Sub-Project 2, Phase 2: Gateway + Target (no interceptor)
+### Sub-Project 2, Phase 2: Gateway + Target (multi-step)
+
+The Gateway deployment requires multiple steps because the GatewayTarget's `CredentialProviderConfigurations` references an OAuth2 Credential Provider ARN, but no CloudFormation resource type exists for credential providers. The provider must be created via API between CFN deploys.
 
 ```bash
-# Create the gateway (no interceptor yet)
-agentcore create_mcp_gateway \
-  --region us-east-1 \
-  --name interceptors-demo-gateway \
-  --role-arn <gateway-service-role-arn>
+# Step 1: Deploy Gateway + Cognito, no target (CFN)
+# Set O_CREDENTIAL_PROVIDER_ARN=NONE in environment.sh for first deploy
+make gateway.deploy
+# Creates: Cognito UserPool/Domain/ResourceServer/AppClient, Gateway, IAM role
+# GatewayTarget is skipped because pCredentialProviderArn=NONE
+# Record outputs in environment.sh:
+#   O_GATEWAY_ID, O_GATEWAY_URL, O_COGNITO_USER_POOL_ID,
+#   O_COGNITO_CLIENT_ID, O_COGNITO_DISCOVERY_URL, O_COGNITO_ISSUER
 
-# Add MCP server as gateway target
-agentcore add target                 # Try CLI first; fallback to boto3
+# Step 2: Create OAuth2 credential provider (API)
+make gateway.setup
+# Reads Cognito client secret, calls create_oauth2_credential_provider API
+# Record output in environment.sh: O_CREDENTIAL_PROVIDER_ARN
 
-# Test through gateway
-make test.gateway                    # MCP client -> Gateway -> Runtime
+# Step 3: Update Runtime with JWT auth (CFN)
+make runtime.deploy
+# Adds CustomJWTAuthorizer referencing Cognito discovery URL and client ID
+
+# Step 4: Verify Runtime accepts JWT tokens
+make runtime.invoke
+
+# Step 5: Redeploy Gateway with target (CFN)
+# Set O_CREDENTIAL_PROVIDER_ARN to the real ARN in environment.sh
+make gateway.deploy
+# Creates GatewayTarget with CredentialProviderConfigurations referencing the provider
+
+# Step 6: Test end-to-end through Gateway
+make gateway.invoke
 ```
 
 ### Sub-Project 2, Phase 3: Attach Interceptor to Gateway
 
 ```bash
-# Delete existing gateway
-make gateway.delete                  # Delete gateway without interceptor
-
-# Recreate gateway with interceptor configuration
-agentcore create_mcp_gateway \
-  --region us-east-1 \
-  --name interceptors-demo-gateway \
-  --role-arn <gateway-service-role-arn> \
-  --interceptor-configurations '[{
-    "interceptor": {
-      "lambda": {
-        "arn": "<interceptor-lambda-arn>"
-      }
-    },
-    "interceptionPoints": ["REQUEST"],
-    "inputConfiguration": {
-      "passRequestHeaders": true
-    }
-  }]'
-
-# Re-add MCP server as gateway target
-agentcore add target                 # or boto3 fallback
-
-# Test through gateway with interceptor
-make test.gateway                    # Verify custom header is injected on tools/call
-make logs.interceptor                # View interceptor Lambda logs
+# TBD: Add interceptor configuration to Gateway
 ```
 
 ---
 
 ## IAM Configuration
 
-### Gateway Service Role (created by SAM template)
+### Gateway Service Role (Sub-Project 1)
 
-**Trust Policy**:
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "bedrock-agentcore.amazonaws.com"
-      },
-      "Action": "sts:AssumeRole",
-      "Condition": {
-        "StringEquals": {
-          "aws:SourceAccount": "<ACCOUNT_ID>"
-        }
-      }
-    }
-  ]
-}
-```
+Trust policy for `bedrock-agentcore.amazonaws.com` with `lambda:InvokeFunction` permission.
 
-**Permissions Policy**:
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": "lambda:InvokeFunction",
-      "Resource": "arn:aws:lambda:us-east-1:<ACCOUNT_ID>:function:<INTERCEPTOR_FUNCTION_NAME>"
-    }
-  ]
-}
-```
+### Runtime Role (Sub-Project 2, Phase 1)
+
+Trust policy for `bedrock-agentcore.amazonaws.com` with CloudWatch Logs permissions.
+
+### Gateway Role (Sub-Project 2, Phase 2)
+
+Trust policy for `bedrock-agentcore.amazonaws.com` with:
+- `bedrock-agentcore:*` — broad AgentCore permissions (required for OAuth token exchange; scoped actions like `InvokeAgentRuntime` + `GetWorkloadAccessToken` + `GetResourceOauth2Token` are insufficient)
+- `agent-credential-provider:*` — credential provider token exchange (required for Gateway to obtain OAuth tokens)
+- `secretsmanager:GetSecretValue` — read credential provider secrets
 
 ---
 
@@ -356,16 +324,18 @@ make logs.interceptor                # View interceptor Lambda logs
 
 | Parameter | Description |
 |-----------|-------------|
-| `PROFILE` | AWS CLI profile (default) |
-| `REGION` | AWS region (us-east-1) |
-| `ACCOUNTID` | AWS account ID |
+| `PROFILE` | AWS CLI profile |
+| `REGION` | AWS region |
 | `P_INTERCEPTOR_FUNCTION_NAME` | Lambda interceptor function name |
 | `P_STACK_INTERCEPTOR` | SAM stack name for interceptor |
-| `O_GATEWAY_ID` | Deployed Gateway ID (set after gateway creation) |
-| `O_GATEWAY_ENDPOINT` | Gateway MCP endpoint URL (set after gateway creation) |
-| `O_INTERCEPTOR_ARN` | Lambda interceptor ARN (derived from stack outputs) |
-| `O_GATEWAY_ROLE_ARN` | Gateway service role ARN (derived from stack outputs) |
-| `O_RUNTIME_ENDPOINT` | AgentCore Runtime invocation URL (from `agentcore status`) |
+| `P_RUNTIME_NAME` | AgentCore Runtime name |
+| `P_STACK_RUNTIME` | SAM stack name for runtime |
+| `P_S3_BUCKET` | S3 bucket for runtime code artifacts |
+| `P_GATEWAY_NAME` | AgentCore Gateway name |
+| `P_STACK_GATEWAY` | SAM stack name for gateway |
+| `P_COGNITO_DOMAIN` | Cognito UserPool domain prefix |
+| `P_OAUTH_PROVIDER_NAME` | OAuth2 credential provider name |
+| `O_*` | Stack outputs (ARNs, IDs, URLs) |
 
 ---
 
@@ -376,61 +346,32 @@ Custom headers forwarded to AgentCore Runtime **must** use the prefix `X-Amzn-Be
 Constraints:
 - Max header value size: 4KB
 - Max 20 custom headers per runtime
-- Headers must be added to the Runtime's `request_header_allowlist` configuration
-
-Configuration via AgentCore CLI:
-```bash
-agentcore configure --request-header-allowlist "X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo"
-```
-
-Or manually in `.bedrock_agentcore.yaml`:
-```yaml
-request_header_allowlist:
-  - "X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo"
-```
+- Headers must be added to the Runtime's `RequestHeaderAllowlist` in the CloudFormation template
 
 ---
 
-## MCP Server Tool Definition
+## Known Issues
 
-```python
-@mcp.tool()
-def hello_world(name: str) -> dict:
-    """Says hello to the given name. Used to demonstrate Gateway interceptors."""
-    # Log headers from the current request context
-    # Log the full request details
-    return {"greeting": f"Hello, {name}!", "timestamp": "<current_time>"}
-```
+1. **SigV4/JWT mutual exclusivity**: When the Runtime has CustomJWTAuthorizer configured, the boto3 SDK's `invoke_agent_runtime` (which uses SigV4) returns "Authorization method mismatch." Direct HTTP calls with JWT Bearer tokens must be used instead.
 
----
+2. **Cognito aud claim**: Cognito access tokens from `client_credentials` grant do not include an `aud` claim. The runtime's `AllowedAudience` must not be set, or it will reject all tokens with "Claim 'aud' value mismatch."
 
-## Success Criteria
+3. **OAuth2 credential provider not in CFN**: No CloudFormation resource exists for `OAuth2CredentialProvider`. It must be managed via API calls (`gateway/setup_oauth.py`). Must be deleted before deleting the Gateway stack.
 
-1. **Sub-Project 1, Phase 1**: Interceptor Lambda deploys and returns correct output when test-invoked with a `tools/call` event (header added) and a `tools/list` event (passthrough)
-2. **Sub-Project 2, Phase 1**: `agentcore dev` runs the MCP server locally; `list_tools` returns `hello_world`; `tools/call` returns a greeting. Deployed version works the same via `agentcore invoke`
-3. **Sub-Project 2, Phase 2**: Gateway is created; target is added; `list_tools` and `tools/call` work through the gateway endpoint
-4. **Sub-Project 2, Phase 3**: After interceptor is attached, `tools/call` through the gateway shows the `X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo` header in MCP server CloudWatch logs. `tools/list` does NOT show the header (interceptor only adds it on `tools/call`). Direct `agentcore invoke` does NOT show the header.
+4. **Gateway role requires `agent-credential-provider:*`**: The Gateway role needs the `agent-credential-provider:*` IAM action namespace (in addition to `bedrock-agentcore:*`) for the OAuth token exchange to work when forwarding `tools/call` requests. Without it, `initialize` and `tools/list` succeed (served from cache) but `tools/call` fails with "An internal error occurred."
 
----
-
-## Open Questions
-
-1. **Header access in MCP server**: Verify whether `FastMCP` tool handlers can access HTTP headers via `RequestContext.request_headers` inside AgentCore Runtime, or if middleware is needed.
-2. **`agentcore add target` for gateway**: Verify whether `agentcore add target` supports adding targets to a gateway created via `create_mcp_gateway`. If not, use boto3 `create_gateway_target`.
-3. **Gateway update vs recreate**: Verify whether `agentcore create_mcp_gateway` supports updating an existing gateway with interceptor config, or if delete + recreate is required for Phase 3.
-4. **Gateway target `metadataConfiguration`**: Verify whether `allowedRequestHeaders` needs to be explicitly set on the gateway target, or if it is automatically configured.
+5. **Gateway `SearchType: SEMANTIC` requires no targets**: The `SearchType` property on the Gateway cannot be changed while targets exist. To modify, first deploy with `pCredentialProviderArn=NONE` to delete the target, then update the Gateway, then redeploy with the real ARN.
 
 ---
 
 ## References
 
-- [AgentCore CLI](https://github.com/aws/agentcore-cli) (v0.3.0-preview)
 - [Using interceptors with Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-interceptors.html)
-- [Types of interceptors](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-interceptors-types.html)
 - [Interceptor configuration](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-interceptors-configuration.html)
 - [Interceptor examples](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-interceptors-examples.html)
-- [Interceptor permissions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-interceptors-permissions.html)
-- [Gateway service role permissions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-prerequisites-permissions.html)
 - [Header propagation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-headers.html)
 - [Runtime header allowlist](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-header-allowlist.html)
-- [AWS sample: header propagation notebook](https://github.com/awslabs/amazon-bedrock-agentcore-samples/blob/main/01-tutorials/02-AgentCore-gateway/08-custom-header-propagation/gateway-interceptor-header-propagation.ipynb)
+- [Gateway target MCPServers](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-MCPservers.html)
+- [CloudFormation: AWS::BedrockAgentCore::Gateway](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-gateway.html)
+- [CloudFormation: AWS::BedrockAgentCore::GatewayTarget](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-gatewaytarget.html)
+- [CloudFormation: AWS::BedrockAgentCore::Runtime](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-runtime.html)

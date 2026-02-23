@@ -1,0 +1,162 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AgentCore Gateway with MCP server target and Cognito OAuth
+
+Parameters:
+  pGatewayName:
+    Type: String
+    Description: Name of the AgentCore Gateway
+  pAccountId:
+    Type: String
+    Description: AWS account ID
+  pRegion:
+    Type: String
+    Description: AWS region
+  pRuntimeArn:
+    Type: String
+    Description: AgentCore Runtime ARN for the MCP server target
+  pRuntimeId:
+    Type: String
+    Description: AgentCore Runtime ID (used to construct endpoint URL)
+  pCredentialProviderArn:
+    Type: String
+    Description: OAuth2 Credential Provider ARN (NONE on first deploy)
+    Default: "NONE"
+  pCognitoDomain:
+    Type: String
+    Description: Cognito UserPool domain prefix (must be globally unique)
+    Default: "interceptors-demo-gateway"
+
+Conditions:
+  HasCredentialProvider: !Not [!Equals [!Ref pCredentialProviderArn, "NONE"]]
+
+Resources:
+  # Cognito resources for OAuth2 client_credentials flow
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${pGatewayName}-pool"
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+
+  CognitoUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref pCognitoDomain
+      UserPoolId: !Ref CognitoUserPool
+
+  CognitoResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      Identifier: !Sub "https://${pGatewayName}.agentcore.local"
+      Name: !Sub "${pGatewayName}-resource-server"
+      UserPoolId: !Ref CognitoUserPool
+      Scopes:
+        - ScopeName: invoke
+          ScopeDescription: Invoke MCP server through gateway
+
+  CognitoAppClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: CognitoResourceServer
+    Properties:
+      ClientName: !Sub "${pGatewayName}-client"
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: true
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - !Sub "https://${pGatewayName}.agentcore.local/invoke"
+      SupportedIdentityProviders:
+        - COGNITO
+
+  # Gateway IAM role
+  GatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${pGatewayName}-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref pAccountId
+              ArnLike:
+                aws:SourceArn: !Sub "arn:aws:bedrock-agentcore:${pRegion}:${pAccountId}:*"
+      Policies:
+        - PolicyName: AgentCoreGateway
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:*
+                  - agent-credential-provider:*
+                  - secretsmanager:GetSecretValue
+                Resource: "*"
+
+  # Gateway
+  Gateway:
+    Type: AWS::BedrockAgentCore::Gateway
+    DependsOn: GatewayRole
+    Properties:
+      Name: !Ref pGatewayName
+      ProtocolType: MCP
+      ProtocolConfiguration:
+        Mcp:
+          SupportedVersions:
+            - "2025-03-26"
+          SearchType: SEMANTIC
+      AuthorizerType: NONE
+      Description: Gateway for interceptors demo
+      RoleArn: !GetAtt GatewayRole.Arn
+
+  # Gateway target (only created when credential provider ARN is set)
+  GatewayTarget:
+    Type: AWS::BedrockAgentCore::GatewayTarget
+    Condition: HasCredentialProvider
+    DependsOn: Gateway
+    Properties:
+      GatewayIdentifier: !GetAtt Gateway.GatewayIdentifier
+      Name: interceptors-demo-mcpserver
+      Description: MCP server target routed through AgentCore Runtime
+      TargetConfiguration:
+        Mcp:
+          McpServer:
+            Endpoint: !Sub "https://bedrock-agentcore.${pRegion}.amazonaws.com/runtimes/arn%3Aaws%3Abedrock-agentcore%3A${pRegion}%3A${pAccountId}%3Aruntime%2F${pRuntimeId}/invocations?qualifier=DEFAULT"
+      CredentialProviderConfigurations:
+        - CredentialProviderType: OAUTH
+          CredentialProvider:
+            OauthCredentialProvider:
+              ProviderArn: !Ref pCredentialProviderArn
+              Scopes:
+                - !Sub "https://${pGatewayName}.agentcore.local/invoke"
+
+Outputs:
+  oGatewayArn:
+    Description: AgentCore Gateway ARN
+    Value: !GetAtt Gateway.GatewayArn
+  oGatewayId:
+    Description: AgentCore Gateway ID
+    Value: !GetAtt Gateway.GatewayIdentifier
+  oGatewayUrl:
+    Description: AgentCore Gateway MCP endpoint URL
+    Value: !GetAtt Gateway.GatewayUrl
+  oGatewayRoleArn:
+    Description: Gateway execution role ARN
+    Value: !GetAtt GatewayRole.Arn
+  oCognitoUserPoolId:
+    Description: Cognito UserPool ID
+    Value: !Ref CognitoUserPool
+  oCognitoClientId:
+    Description: Cognito App Client ID
+    Value: !Ref CognitoAppClient
+  oCognitoDiscoveryUrl:
+    Description: Cognito OIDC Discovery URL
+    Value: !Sub "https://cognito-idp.${pRegion}.amazonaws.com/${CognitoUserPool}/.well-known/openid-configuration"
+  oCognitoIssuer:
+    Description: Cognito Issuer URL
+    Value: !Sub "https://cognito-idp.${pRegion}.amazonaws.com/${CognitoUserPool}"

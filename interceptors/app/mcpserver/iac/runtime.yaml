@@ -17,6 +17,17 @@ Parameters:
   pS3Prefix:
     Type: String
     Description: S3 key for the deployment package zip
+  pCognitoIssuer:
+    Type: String
+    Description: Cognito Issuer URL for JWT validation (NONE = no JWT auth)
+    Default: "NONE"
+  pCognitoAudience:
+    Type: String
+    Description: Cognito Client ID used as JWT audience (NONE = no JWT auth)
+    Default: "NONE"
+
+Conditions:
+  HasJWTAuth: !Not [!Equals [!Ref pCognitoIssuer, "NONE"]]
 
 Resources:
   RuntimeRole:
@@ -71,6 +82,13 @@ Resources:
       RequestHeaderConfiguration:
         RequestHeaderAllowlist:
           - X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo
+      AuthorizerConfiguration: !If
+        - HasJWTAuth
+        - CustomJWTAuthorizer:
+            DiscoveryUrl: !Sub "${pCognitoIssuer}/.well-known/openid-configuration"
+            AllowedClients:
+              - !Ref pCognitoAudience
+        - !Ref AWS::NoValue
 
 Outputs:
   oRuntimeArn:

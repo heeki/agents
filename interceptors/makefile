@@ -39,7 +39,7 @@ interceptor.local.tools_list:
 		--template interceptor/iac/interceptor.yaml \
 		--event interceptor/events/test_tools_list.json
 
-# Sub-project 2: MCP Server on AgentCore Runtime
+# Sub-project 2, Phase 1: MCP Server on AgentCore Runtime
 runtime.package:
 	rm -rf tmp/runtime_package tmp/runtime_*.zip
 	uv pip install \
@@ -71,6 +71,8 @@ runtime.deploy:
 			pRegion=$(REGION) \
 			pS3Bucket=$(P_S3_BUCKET) \
 			pS3Prefix=$(P_STACK_RUNTIME)/$(P_ZIP_NAME) \
+			pCognitoIssuer=$(O_COGNITO_ISSUER) \
+			pCognitoAudience=$(O_COGNITO_CLIENT_ID) \
 		--capabilities CAPABILITY_NAMED_IAM \
 		--no-confirm-changeset
 
@@ -82,7 +84,12 @@ runtime.delete:
 		--no-prompts
 
 runtime.invoke:
-	python3 app/mcpserver/test_runtime.py $(O_RUNTIME_ARN) --region $(REGION)
+	python3 app/mcpserver/test_runtime.py $(O_RUNTIME_ARN) --region $(REGION) \
+		--jwt \
+		--cognito-domain $(P_COGNITO_DOMAIN) \
+		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
+		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
+		--scope "https://$(P_GATEWAY_NAME).agentcore.local/invoke"
 
 runtime.status:
 	python3 -c "\
@@ -90,4 +97,61 @@ runtime.status:
 	client = boto3.client('bedrock-agentcore-control', region_name='$(REGION)'); \
 	response = client.get_agent_runtime(agentRuntimeId='$(O_RUNTIME_ID)'); \
 	response.pop('ResponseMetadata', None); \
-	print(json.dumps(response, indent=2, default=str))" | jq
+	print(json.dumps(response, indent=2, default=str))"
+
+# Sub-project 2, Phase 2: AgentCore Gateway
+gateway.deploy:
+	sam deploy \
+		--profile $(PROFILE) \
+		--region $(REGION) \
+		--template-file gateway/iac/gateway.yaml \
+		--stack-name $(P_STACK_GATEWAY) \
+		--parameter-overrides \
+			pGatewayName=$(P_GATEWAY_NAME) \
+			pAccountId=$(ACCOUNTID) \
+			pRegion=$(REGION) \
+			pRuntimeArn=$(O_RUNTIME_ARN) \
+			pRuntimeId=$(O_RUNTIME_ID) \
+			pCredentialProviderArn=$(O_CREDENTIAL_PROVIDER_ARN) \
+			pCognitoDomain=$(P_COGNITO_DOMAIN) \
+		--capabilities CAPABILITY_NAMED_IAM \
+		--no-confirm-changeset
+
+gateway.setup:
+	python3 gateway/setup_oauth.py \
+		--action create \
+		--region $(REGION) \
+		--name $(P_OAUTH_PROVIDER_NAME) \
+		--cognito-discovery-url $(O_COGNITO_DISCOVERY_URL) \
+		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
+		--cognito-client-id $(O_COGNITO_CLIENT_ID)
+
+gateway.setup.delete:
+	python3 gateway/setup_oauth.py \
+		--action delete \
+		--region $(REGION) \
+		--name $(P_OAUTH_PROVIDER_NAME)
+
+gateway.setup.get:
+	python3 gateway/setup_oauth.py \
+		--action get \
+		--region $(REGION) \
+		--name $(P_OAUTH_PROVIDER_NAME)
+
+gateway.delete:
+	sam delete \
+		--profile $(PROFILE) \
+		--region $(REGION) \
+		--stack-name $(P_STACK_GATEWAY) \
+		--no-prompts
+
+gateway.invoke:
+	python3 gateway/test_gateway.py $(O_GATEWAY_URL)
+
+gateway.status:
+	python3 -c "\
+	import boto3, json; \
+	client = boto3.client('bedrock-agentcore-control', region_name='$(REGION)'); \
+	response = client.get_gateway(gatewayIdentifier='$(O_GATEWAY_ID)'); \
+	response.pop('ResponseMetadata', None); \
+	print(json.dumps(response, indent=2, default=str))"
