@@ -10,7 +10,8 @@ MCP Client
     |--- Direct path ---> AgentCore Runtime (MCP Server)
     |                       Auth: JWT Bearer token (Cognito)
     |
-    |--- Gateway path --> AgentCore Gateway (no client auth)
+    |--- Gateway path --> AgentCore Gateway
+    |                       Auth: JWT Bearer token (Cognito)
                               |
                               +--> Request Interceptor (Lambda)
                               |        On tools/call: adds header
@@ -147,7 +148,7 @@ AgentCore Gateway with an MCPServer target backed by the AgentCore Runtime. Uses
 | Stack name | `interceptors-demo-gateway` |
 | Gateway name | `interceptors-demo-gateway` |
 | Protocol | MCP (SEMANTIC search, version 2025-03-26) |
-| Client auth | NONE |
+| Client auth | CUSTOM_JWT (Cognito) |
 | Target auth | OAuth (Cognito client_credentials) |
 | Interceptor | Lambda REQUEST interceptor (conditional on `pInterceptorArn`) |
 | OAuth provider | `interceptors-demo-oauth-provider` (API-managed) |
@@ -162,7 +163,7 @@ AgentCore Gateway with an MCPServer target backed by the AgentCore Runtime. Uses
 | `gateway.setup.delete` | Delete OAuth2 credential provider |
 | `gateway.setup.get` | Get OAuth2 credential provider details |
 | `gateway.delete` | SAM delete the Gateway stack |
-| `gateway.invoke` | Test MCP flow through Gateway (initialize, tools/list, tools/call) |
+| `gateway.invoke` | Test MCP flow through Gateway with JWT auth (initialize, tools/list, tools/call) |
 | `gateway.status` | Check Gateway status via boto3 |
 
 ### Deployment Workflow (multi-step)
@@ -309,11 +310,13 @@ Log group: `/aws/bedrock-agentcore/runtimes/<runtime-name>-<id>-DEFAULT`
 
 1. **SigV4/JWT mutual exclusivity**: When JWT auth is configured on the Runtime, the SDK's `invoke_agent_runtime` (SigV4) no longer works. Use `test_runtime.py --jwt` for direct HTTP invocation with Bearer tokens.
 
-2. **Cognito aud claim**: Cognito access tokens from `client_credentials` grant lack an `aud` claim. Do not set `AllowedAudience` on the runtime's JWT authorizer — use `AllowedClients` only.
+2. **Cognito aud claim**: Cognito access tokens from `client_credentials` grant lack an `aud` claim. Do not set `AllowedAudience` on the Runtime's or Gateway's JWT authorizer — use `AllowedClients` only.
 
 3. **Gateway role requires `agent-credential-provider:*`**: The Gateway role needs the `agent-credential-provider:*` IAM action namespace (in addition to `bedrock-agentcore:*`) for the OAuth token exchange to work. Without it, `tools/call` fails with "An internal error occurred" while `initialize` and `tools/list` succeed (served from cache).
 
 4. **Gateway `SearchType: SEMANTIC` requires no targets**: The Gateway's `SearchType` cannot be changed while targets exist. To update, delete the target first (deploy with `pCredentialProviderArn=NONE`), update the Gateway, then recreate the target.
+
+5. **Gateway `AuthorizerType` is immutable**: The `AuthorizerType` on a Gateway cannot be changed after creation. To switch (e.g., from `NONE` to `CUSTOM_JWT`), delete the entire Gateway stack and recreate it. This cascades to the OAuth credential provider (must be deleted first) and the Runtime JWT auth (must be updated with new Cognito issuer after recreation).
 
 ## References
 
@@ -322,6 +325,8 @@ Log group: `/aws/bedrock-agentcore/runtimes/<runtime-name>-<id>-DEFAULT`
 - [Header propagation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-headers.html)
 - [Runtime header allowlist](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-header-allowlist.html)
 - [CFN: AWS::BedrockAgentCore::Gateway](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-gateway.html)
+- [CFN: Gateway AuthorizerConfiguration](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-bedrockagentcore-gateway-authorizerconfiguration.html)
+- [CFN: Gateway CustomJWTAuthorizerConfiguration](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-bedrockagentcore-gateway-customjwtauthorizerconfiguration.html)
 - [CFN: Gateway InterceptorConfiguration](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-bedrockagentcore-gateway-interceptorconfiguration.html)
 - [CFN: AWS::BedrockAgentCore::GatewayTarget](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-gatewaytarget.html)
 - [CFN: AWS::BedrockAgentCore::Runtime](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-runtime.html)

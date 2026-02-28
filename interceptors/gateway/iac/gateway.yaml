@@ -116,7 +116,12 @@ Resources:
           SupportedVersions:
             - "2025-03-26"
           SearchType: SEMANTIC
-      AuthorizerType: NONE
+      AuthorizerType: CUSTOM_JWT
+      AuthorizerConfiguration:
+        CustomJWTAuthorizer:
+          DiscoveryUrl: !Sub "https://cognito-idp.${pRegion}.amazonaws.com/${CognitoUserPool}/.well-known/openid-configuration"
+          AllowedClients:
+            - !Ref CognitoAppClient
       Description: Gateway for interceptors demo
       RoleArn: !GetAtt GatewayRole.Arn
       InterceptorConfigurations: !If

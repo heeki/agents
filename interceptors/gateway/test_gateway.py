@@ -1,17 +1,35 @@
 import argparse
+import base64
 import json
 import sys
 
+import boto3
 import requests
 
 
-def send_rpc(url: str, rpc_id: int, method: str, params: dict | None = None, session_id: str | None = None) -> tuple[str, dict, dict]:
+def get_jwt_token(region: str, cognito_domain: str, client_id: str, client_secret: str, scope: str) -> str:
+    """Get JWT access token from Cognito using client_credentials flow."""
+    token_url = f"https://{cognito_domain}.auth.{region}.amazoncognito.com/oauth2/token"
+    auth = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+    r = requests.post(token_url, data={
+        "grant_type": "client_credentials",
+        "scope": scope,
+    }, headers={
+        "Authorization": f"Basic {auth}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    })
+    r.raise_for_status()
+    return r.json()["access_token"]
+
+
+def send_rpc(url: str, rpc_id: int, method: str, token: str, params: dict | None = None, session_id: str | None = None) -> tuple[str, dict, dict]:
     payload: dict = {"jsonrpc": "2.0", "id": rpc_id, "method": method}
     if params:
         payload["params"] = params
     headers: dict[str, str] = {
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream",
+        "Authorization": f"Bearer {token}",
     }
     if session_id:
         headers["Mcp-Session-Id"] = session_id
@@ -29,11 +47,23 @@ def send_rpc(url: str, rpc_id: int, method: str, params: dict | None = None, ses
 def main() -> None:
     parser = argparse.ArgumentParser(description="Test MCP server through AgentCore Gateway")
     parser.add_argument("gateway_url", help="AgentCore Gateway MCP endpoint URL")
+    parser.add_argument("--region", default="us-east-1", help="AWS region")
+    parser.add_argument("--cognito-domain", required=True, help="Cognito UserPool domain prefix")
+    parser.add_argument("--cognito-user-pool-id", required=True, help="Cognito UserPool ID")
+    parser.add_argument("--cognito-client-id", required=True, help="Cognito App Client ID")
+    parser.add_argument("--scope", required=True, help="OAuth scope")
     args = parser.parse_args()
 
+    # Get JWT token from Cognito
+    cognito = boto3.client("cognito-idp", region_name=args.region)
+    resp = cognito.describe_user_pool_client(UserPoolId=args.cognito_user_pool_id, ClientId=args.cognito_client_id)
+    client_secret = resp["UserPoolClient"]["ClientSecret"]
+    token = get_jwt_token(args.region, args.cognito_domain, args.cognito_client_id, client_secret, args.scope)
+    print("Using JWT Bearer token auth")
+
     # Initialize
-    print("=== initialize ===")
-    session_id, data, resp_headers = send_rpc(args.gateway_url, 1, "initialize", {
+    print("\n=== initialize ===")
+    session_id, data, resp_headers = send_rpc(args.gateway_url, 1, "initialize", token, {
         "protocolVersion": "2025-03-26",
         "capabilities": {},
         "clientInfo": {"name": "test-gateway-client", "version": "1.0"},
@@ -46,7 +76,7 @@ def main() -> None:
 
     # tools/list
     print("\n=== tools/list ===")
-    _, data, resp_headers = send_rpc(args.gateway_url, 2, "tools/list", session_id=session_id)
+    _, data, resp_headers = send_rpc(args.gateway_url, 2, "tools/list", token, session_id=session_id)
     tools = data.get("result", {}).get("tools", [])
     for tool in tools:
         print(f"  - {tool['name']}: {tool.get('description', '')}")
@@ -60,7 +90,7 @@ def main() -> None:
         tools[0]["name"] if tools else "hello_world",
     )
     print(f"\n=== tools/call {tool_name} ===")
-    _, data, resp_headers = send_rpc(args.gateway_url, 3, "tools/call", {
+    _, data, resp_headers = send_rpc(args.gateway_url, 3, "tools/call", token, {
         "name": tool_name,
         "arguments": {"name": "World"},
     }, session_id=session_id)

@@ -1,5 +1,8 @@
 include etc/environment.sh
 
+claude:
+	claude
+
 # Sub-project 1: Interceptor Lambda
 interceptor.build:
 	sam build \
@@ -174,7 +177,11 @@ gateway.delete:
 		--no-prompts
 
 gateway.invoke:
-	python3 gateway/test_gateway.py $(O_GATEWAY_URL)
+	python3 gateway/test_gateway.py $(O_GATEWAY_URL) --region $(REGION) \
+		--cognito-domain $(P_COGNITO_DOMAIN) \
+		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
+		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
+		--scope "https://$(P_GATEWAY_NAME).agentcore.local/invoke"
 
 gateway.status:
 	python3 -c "\

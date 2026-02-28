@@ -12,7 +12,8 @@ MCP Client
     |--- Direct path ---> AgentCore Runtime (MCP Server)
     |                       Auth: JWT Bearer token (Cognito)
     |
-    |--- Gateway path --> AgentCore Gateway (AuthorizerType: NONE)
+    |--- Gateway path --> AgentCore Gateway
+    |                       Auth: JWT Bearer token (Cognito)
                               |
                               +--> Request Interceptor (Lambda)
                               |        On tools/call: adds header
@@ -82,12 +83,13 @@ Self-contained Lambda function and SAM infrastructure for the request intercepto
 ### 3. AgentCore Gateway — Sub-Project 2, Phase 2
 
 - **Protocol**: MCP (supportedVersions: `2025-03-26`, searchType: `SEMANTIC`)
-- **Auth**: NONE (no client authentication required)
+- **Auth**: CUSTOM_JWT (Cognito — same user pool used for Runtime JWT auth)
 - **Deployment**: CloudFormation template (`gateway/iac/gateway.yaml`) + API script (`gateway/setup_oauth.py`)
 - **Resources managed by CFN** (`gateway/iac/gateway.yaml`):
   - Cognito UserPool, UserPoolDomain, ResourceServer, AppClient (for OAuth `client_credentials` flow)
   - Gateway IAM role (`bedrock-agentcore:*`, `agent-credential-provider:*`, `secretsmanager:GetSecretValue`, `lambda:InvokeFunction`)
-  - Gateway (MCP protocol, AuthorizerType: NONE, SearchType: SEMANTIC)
+  - Gateway (MCP protocol, AuthorizerType: CUSTOM_JWT, SearchType: SEMANTIC)
+  - AuthorizerConfiguration: CustomJWTAuthorizer with Cognito OIDC discovery URL and AllowedClients
   - InterceptorConfigurations (conditional on `pInterceptorArn != NONE`):
     - InterceptionPoints: `REQUEST`
     - Interceptor: Lambda ARN from Sub-Project 1
@@ -103,7 +105,18 @@ Self-contained Lambda function and SAM infrastructure for the request intercepto
   - Stores the Cognito client ID and client secret for the `client_credentials` grant
   - Must be created before the GatewayTarget can reference it, and deleted before the Gateway stack is torn down
 
-### 4. OAuth Authentication Flow
+### 4. Authentication Flows
+
+#### Client-to-Gateway Authentication (CUSTOM_JWT)
+
+The Gateway uses CUSTOM_JWT authorization to authenticate inbound client requests using the same Cognito user pool:
+
+1. **Gateway's `AuthorizerConfiguration`** (CFN) specifies a `CustomJWTAuthorizer` with the Cognito OIDC discovery URL and `AllowedClients`
+2. Clients obtain a JWT token from Cognito using `client_credentials` flow (same token used for direct Runtime access)
+3. Clients include the token as a `Bearer` token in the `Authorization` header
+4. The Gateway validates the token before processing the request
+
+#### Gateway-to-Runtime Authentication (OAuth2)
 
 The Gateway-to-Runtime authentication uses Cognito OAuth2:
 
@@ -118,7 +131,7 @@ The Gateway-to-Runtime authentication uses Cognito OAuth2:
 
 **Key constraint**: SigV4 and JWT auth are mutually exclusive on a Runtime. When JWT auth is configured, the SDK's `invoke_agent_runtime` (which uses SigV4) no longer works. Direct invocation requires JWT Bearer tokens via HTTP.
 
-**Key constraint**: Cognito access tokens from `client_credentials` grant do NOT include an `aud` claim. The runtime's `AllowedAudience` field must NOT be set; use `AllowedClients` to validate the `client_id` claim instead.
+**Key constraint**: Cognito access tokens from `client_credentials` grant do NOT include an `aud` claim. Neither the Runtime's nor the Gateway's `AllowedAudience` field should be set; use `AllowedClients` to validate the `client_id` claim instead.
 
 **Key constraint**: The Gateway IAM role must include `agent-credential-provider:*` in addition to `bedrock-agentcore:*` for the OAuth token exchange to succeed at request time.
 
@@ -128,7 +141,8 @@ The Gateway-to-Runtime authentication uses Cognito OAuth2:
   - SigV4 mode: uses boto3 SDK (when runtime has no JWT auth)
   - JWT mode: uses HTTP + Bearer token (when runtime has JWT auth)
 - **Gateway test** (`gateway/test_gateway.py`): Tests end-to-end Gateway flow
-  - Uses plain HTTP (no auth, since Gateway AuthorizerType: NONE)
+  - Uses JWT Bearer token auth (Cognito `client_credentials` flow, same as Runtime test)
+  - Obtains client secret via `describe_user_pool_client`, exchanges for JWT token at Cognito token endpoint
   - Tool names are qualified with target prefix (e.g., `interceptors-demo-mcpserver___hello_world`)
 
 ---
@@ -466,6 +480,8 @@ The runtime infrastructure auto-creates a log group for application-level OTEL t
 
 7. **GatewayTarget `AllowedRequestHeaders` required for interceptor headers**: Even though the interceptor adds a custom header to the request, the Gateway strips it before forwarding to the target unless the header is listed in `MetadataConfiguration.AllowedRequestHeaders` on the GatewayTarget.
 
+8. **Gateway `AuthorizerType` is immutable**: The `AuthorizerType` property on a Gateway cannot be updated after creation. Attempting to change it (e.g., from `NONE` to `CUSTOM_JWT`) returns "Authorizer type cannot be updated for an existing gateway." To change, delete the entire Gateway stack and recreate it. This requires cascading updates: delete the OAuth credential provider first, delete the stack, redeploy with the new AuthorizerType, recreate the credential provider with new Cognito details, and update the Runtime with the new Cognito issuer.
+
 ---
 
 ## References
@@ -477,6 +493,8 @@ The runtime infrastructure auto-creates a log group for application-level OTEL t
 - [Runtime header allowlist](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-header-allowlist.html)
 - [Gateway target MCPServers](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-MCPservers.html)
 - [CloudFormation: AWS::BedrockAgentCore::Gateway](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-gateway.html)
+- [CloudFormation: Gateway AuthorizerConfiguration](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-bedrockagentcore-gateway-authorizerconfiguration.html)
+- [CloudFormation: Gateway CustomJWTAuthorizerConfiguration](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-bedrockagentcore-gateway-customjwtauthorizerconfiguration.html)
 - [CloudFormation: Gateway InterceptorConfiguration](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-bedrockagentcore-gateway-interceptorconfiguration.html)
 - [CloudFormation: AWS::BedrockAgentCore::GatewayTarget](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-gatewaytarget.html)
 - [CloudFormation: AWS::BedrockAgentCore::Runtime](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-runtime.html)
