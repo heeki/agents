@@ -42,6 +42,13 @@ Resources:
       UserPoolName: !Sub "${pGatewayName}-pool"
       AdminCreateUserConfig:
         AllowAdminCreateUserOnly: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
 
   CognitoUserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
@@ -58,7 +65,52 @@ Resources:
       Scopes:
         - ScopeName: invoke
           ScopeDescription: Invoke MCP server through gateway
+        - ScopeName: hello_world:read
+          ScopeDescription: List hello_world tool
+        - ScopeName: hello_world:write
+          ScopeDescription: Invoke hello_world tool
+        - ScopeName: fetch_webpage:read
+          ScopeDescription: List fetch_webpage tool
+        - ScopeName: fetch_webpage:write
+          ScopeDescription: Invoke fetch_webpage tool
+        - ScopeName: geocode_location:read
+          ScopeDescription: List geocode_location tool
+        - ScopeName: geocode_location:write
+          ScopeDescription: Invoke geocode_location tool
+        - ScopeName: reverse_geocode:read
+          ScopeDescription: List reverse_geocode tool
+        - ScopeName: reverse_geocode:write
+          ScopeDescription: Invoke reverse_geocode tool
+        - ScopeName: get_weather:read
+          ScopeDescription: List get_weather tool
+        - ScopeName: get_weather:write
+          ScopeDescription: Invoke get_weather tool
+        - ScopeName: get_exchange_rate:read
+          ScopeDescription: List get_exchange_rate tool
+        - ScopeName: get_exchange_rate:write
+          ScopeDescription: Invoke get_exchange_rate tool
+        - ScopeName: get_ip_info:read
+          ScopeDescription: List get_ip_info tool
+        - ScopeName: get_ip_info:write
+          ScopeDescription: Invoke get_ip_info tool
+        - ScopeName: web_search:read
+          ScopeDescription: List web_search tool
+        - ScopeName: web_search:write
+          ScopeDescription: Invoke web_search tool
+        - ScopeName: get_current_time:read
+          ScopeDescription: List get_current_time tool
+        - ScopeName: get_current_time:write
+          ScopeDescription: Invoke get_current_time tool
+        - ScopeName: calculate_math:read
+          ScopeDescription: List calculate_math tool
+        - ScopeName: calculate_math:write
+          ScopeDescription: Invoke calculate_math tool
+        - ScopeName: get_public_holidays:read
+          ScopeDescription: List get_public_holidays tool
+        - ScopeName: get_public_holidays:write
+          ScopeDescription: Invoke get_public_holidays tool
 
+  # Machine-to-machine client (client_credentials flow, used by gateway to call runtime)
   CognitoAppClient:
     Type: AWS::Cognito::UserPoolClient
     DependsOn: CognitoResourceServer
@@ -73,6 +125,124 @@ Resources:
         - !Sub "https://${pGatewayName}.agentcore.local/invoke"
       SupportedIdentityProviders:
         - COGNITO
+
+  # User-facing client (USER_PASSWORD_AUTH flow, used by human users)
+  UserClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: CognitoResourceServer
+    Properties:
+      ClientName: !Sub "${pGatewayName}-user-client"
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+        - !Sub "https://${pGatewayName}.agentcore.local/invoke"
+        - !Sub "https://${pGatewayName}.agentcore.local/hello_world:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/hello_world:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/fetch_webpage:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/fetch_webpage:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/geocode_location:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/geocode_location:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/reverse_geocode:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/reverse_geocode:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_weather:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_weather:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_exchange_rate:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_exchange_rate:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_ip_info:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_ip_info:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/web_search:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/web_search:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_current_time:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_current_time:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/calculate_math:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/calculate_math:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_public_holidays:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_public_holidays:write"
+      CallbackURLs:
+        - "https://localhost"
+      SupportedIdentityProviders:
+        - COGNITO
+
+  # Groups
+  AdminsGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admins
+      Description: Full read/write access to all tools
+      UserPoolId: !Ref CognitoUserPool
+
+  DemoAdminsGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: demo-admins
+      Description: Read-only access to all tools
+      UserPoolId: !Ref CognitoUserPool
+
+  UsersGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: users
+      Description: Full read/write access to all tools
+      UserPoolId: !Ref CognitoUserPool
+
+  # Users
+  AdminUser:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      UserPoolId: !Ref CognitoUserPool
+      Username: admin
+      UserAttributes:
+        - Name: email
+          Value: admin@heeki.cloud
+
+  DemoAdminUser:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      UserPoolId: !Ref CognitoUserPool
+      Username: demo-admin
+      UserAttributes:
+        - Name: email
+          Value: demo-admin@heeki.cloud
+
+  DemoUserUser:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      UserPoolId: !Ref CognitoUserPool
+      Username: demo-user
+      UserAttributes:
+        - Name: email
+          Value: demo-user@heeki.cloud
+
+  # User-to-group assignments
+  AdminToAdmins:
+    Type: AWS::Cognito::UserPoolUserToGroupAttachment
+    Properties:
+      UserPoolId: !Ref CognitoUserPool
+      Username: !Ref AdminUser
+      GroupName: !Ref AdminsGroup
+
+  DemoAdminToDemoAdmins:
+    Type: AWS::Cognito::UserPoolUserToGroupAttachment
+    Properties:
+      UserPoolId: !Ref CognitoUserPool
+      Username: !Ref DemoAdminUser
+      GroupName: !Ref DemoAdminsGroup
+
+  DemoUserToUsers:
+    Type: AWS::Cognito::UserPoolUserToGroupAttachment
+    Properties:
+      UserPoolId: !Ref CognitoUserPool
+      Username: !Ref DemoUserUser
+      GroupName: !Ref UsersGroup
 
   # Gateway IAM role
   GatewayRole:
@@ -122,6 +292,7 @@ Resources:
           DiscoveryUrl: !Sub "https://cognito-idp.${pRegion}.amazonaws.com/${CognitoUserPool}/.well-known/openid-configuration"
           AllowedClients:
             - !Ref CognitoAppClient
+            - !Ref UserClient
       Description: Gateway for interceptors demo
       RoleArn: !GetAtt GatewayRole.Arn
       InterceptorConfigurations: !If
@@ -178,8 +349,11 @@ Outputs:
     Description: Cognito UserPool ID
     Value: !Ref CognitoUserPool
   oCognitoClientId:
-    Description: Cognito App Client ID
+    Description: Cognito M2M App Client ID
     Value: !Ref CognitoAppClient
+  oCognitoUserClientId:
+    Description: Cognito User Client ID
+    Value: !Ref UserClient
   oCognitoDiscoveryUrl:
     Description: Cognito OIDC Discovery URL
     Value: !Sub "https://cognito-idp.${pRegion}.amazonaws.com/${CognitoUserPool}/.well-known/openid-configuration"

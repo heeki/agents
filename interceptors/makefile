@@ -76,6 +76,7 @@ runtime.deploy:
 			pS3Prefix=$(P_STACK_RUNTIME)/$(P_ZIP_NAME) \
 			pCognitoIssuer=$(O_COGNITO_ISSUER) \
 			pCognitoAudience=$(O_COGNITO_CLIENT_ID) \
+			pCognitoUserClientId=$(O_COGNITO_USER_CLIENT_ID) \
 		--capabilities CAPABILITY_NAMED_IAM \
 		--no-confirm-changeset
 
@@ -93,6 +94,47 @@ runtime.invoke:
 		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
 		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
 		--scope "https://$(P_GATEWAY_NAME).agentcore.local/invoke"
+
+runtime.invoke.m2m.all-tools:
+	python3 app/mcpserver/test_runtime.py $(O_RUNTIME_ARN) --region $(REGION) \
+		--jwt \
+		--cognito-domain $(P_COGNITO_DOMAIN) \
+		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
+		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
+		--scope "https://$(P_GATEWAY_NAME).agentcore.local/invoke" \
+		--all-tools
+
+runtime.invoke.user:
+	python3 app/mcpserver/test_runtime.py $(O_RUNTIME_ARN) --region $(REGION) \
+		--jwt \
+		--cognito-domain $(P_COGNITO_DOMAIN) \
+		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
+		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
+		--user-client-id $(O_COGNITO_USER_CLIENT_ID) \
+		--username admin \
+		--password '$(P_COGNITO_PERMANENT_PASSWORD)'
+
+runtime.invoke.admin:
+	python3 app/mcpserver/test_runtime.py $(O_RUNTIME_ARN) --region $(REGION) \
+		--jwt \
+		--cognito-domain $(P_COGNITO_DOMAIN) \
+		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
+		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
+		--user-client-id $(O_COGNITO_USER_CLIENT_ID) \
+		--username admin \
+		--password '$(P_COGNITO_PERMANENT_PASSWORD)' \
+		--all-tools
+
+runtime.invoke.demo-user:
+	python3 app/mcpserver/test_runtime.py $(O_RUNTIME_ARN) --region $(REGION) \
+		--jwt \
+		--cognito-domain $(P_COGNITO_DOMAIN) \
+		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
+		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
+		--user-client-id $(O_COGNITO_USER_CLIENT_ID) \
+		--username demo-user \
+		--password '$(P_COGNITO_PERMANENT_PASSWORD)' \
+		--all-tools
 
 runtime.observability:
 	python3 app/mcpserver/setup_observability.py \
@@ -176,12 +218,79 @@ gateway.delete:
 		--stack-name $(P_STACK_GATEWAY) \
 		--no-prompts
 
+gateway.set-passwords:
+	aws cognito-idp admin-set-user-password \
+		--profile $(PROFILE) --region $(REGION) \
+		--user-pool-id $(P_COGNITO_USER_POOL_ID) \
+		--username admin \
+		--password '$(P_COGNITO_PERMANENT_PASSWORD)' \
+		--permanent
+	aws cognito-idp admin-set-user-password \
+		--profile $(PROFILE) --region $(REGION) \
+		--user-pool-id $(P_COGNITO_USER_POOL_ID) \
+		--username demo-admin \
+		--password '$(P_COGNITO_PERMANENT_PASSWORD)' \
+		--permanent
+	aws cognito-idp admin-set-user-password \
+		--profile $(PROFILE) --region $(REGION) \
+		--user-pool-id $(P_COGNITO_USER_POOL_ID) \
+		--username demo-user \
+		--password '$(P_COGNITO_PERMANENT_PASSWORD)' \
+		--permanent
+
 gateway.invoke:
 	python3 gateway/test_gateway.py $(O_GATEWAY_URL) --region $(REGION) \
 		--cognito-domain $(P_COGNITO_DOMAIN) \
 		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
 		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
 		--scope "https://$(P_GATEWAY_NAME).agentcore.local/invoke"
+
+gateway.invoke.m2m.all-tools:
+	python3 gateway/test_gateway.py $(O_GATEWAY_URL) --region $(REGION) \
+		--cognito-domain $(P_COGNITO_DOMAIN) \
+		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
+		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
+		--scope "https://$(P_GATEWAY_NAME).agentcore.local/invoke" \
+		--all-tools
+
+gateway.invoke.user:
+	python3 gateway/test_gateway.py $(O_GATEWAY_URL) --region $(REGION) \
+		--cognito-domain $(P_COGNITO_DOMAIN) \
+		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
+		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
+		--user-client-id $(O_COGNITO_USER_CLIENT_ID) \
+		--username admin \
+		--password '$(P_COGNITO_PERMANENT_PASSWORD)'
+
+gateway.invoke.demo-admin:
+	python3 gateway/test_gateway.py $(O_GATEWAY_URL) --region $(REGION) \
+		--cognito-domain $(P_COGNITO_DOMAIN) \
+		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
+		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
+		--user-client-id $(O_COGNITO_USER_CLIENT_ID) \
+		--username demo-admin \
+		--password '$(P_COGNITO_PERMANENT_PASSWORD)' \
+		--expect-invoke-denied
+
+gateway.invoke.admin:
+	python3 gateway/test_gateway.py $(O_GATEWAY_URL) --region $(REGION) \
+		--cognito-domain $(P_COGNITO_DOMAIN) \
+		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
+		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
+		--user-client-id $(O_COGNITO_USER_CLIENT_ID) \
+		--username admin \
+		--password '$(P_COGNITO_PERMANENT_PASSWORD)' \
+		--all-tools
+
+gateway.invoke.demo-user:
+	python3 gateway/test_gateway.py $(O_GATEWAY_URL) --region $(REGION) \
+		--cognito-domain $(P_COGNITO_DOMAIN) \
+		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
+		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
+		--user-client-id $(O_COGNITO_USER_CLIENT_ID) \
+		--username demo-user \
+		--password '$(P_COGNITO_PERMANENT_PASSWORD)' \
+		--all-tools
 
 gateway.status:
 	python3 -c "\

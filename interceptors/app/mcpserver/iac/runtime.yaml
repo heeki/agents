@@ -23,11 +23,16 @@ Parameters:
     Default: "NONE"
   pCognitoAudience:
     Type: String
-    Description: Cognito Client ID used as JWT audience (NONE = no JWT auth)
+    Description: Cognito M2M Client ID used as JWT audience (NONE = no JWT auth)
+    Default: "NONE"
+  pCognitoUserClientId:
+    Type: String
+    Description: Cognito User Client ID for USER_PASSWORD_AUTH (NONE to skip)
     Default: "NONE"
 
 Conditions:
   HasJWTAuth: !Not [!Equals [!Ref pCognitoIssuer, "NONE"]]
+  HasUserClientAuth: !Not [!Equals [!Ref pCognitoUserClientId, "NONE"]]
 
 Resources:
   RuntimeRole:
@@ -101,6 +106,7 @@ Resources:
             DiscoveryUrl: !Sub "${pCognitoIssuer}/.well-known/openid-configuration"
             AllowedClients:
               - !Ref pCognitoAudience
+              - !If [HasUserClientAuth, !Ref pCognitoUserClientId, !Ref AWS::NoValue]
         - !Ref AWS::NoValue
 
 Outputs:
