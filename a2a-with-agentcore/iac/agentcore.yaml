@@ -18,6 +18,18 @@ Parameters:
     Type: String
     Description: ECR URI for life sync container
 
+  CognitoUserPoolId:
+    Type: String
+    Description: Cognito User Pool ID for OAuth2 authorization
+
+  CognitoClientId:
+    Type: String
+    Description: Cognito App Client ID (user auth)
+
+  CognitoM2MClientId:
+    Type: String
+    Description: Cognito M2M Client ID (client_credentials)
+
 Resources:
   # Biomechanics Lab Agent Runtime
   BiomechanicsLabRuntime:
@@ -63,6 +75,12 @@ Resources:
       NetworkConfiguration:
         NetworkMode: PUBLIC
       ProtocolConfiguration: A2A
+      AuthorizerConfiguration:
+        CustomJWTAuthorizer:
+          DiscoveryUrl: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}/.well-known/openid-configuration"
+          AllowedClients:
+            - !Ref CognitoClientId
+            - !Ref CognitoM2MClientId
       EnvironmentVariables:
         AWS_REGION: !Ref AWS::Region
         MODEL_ID: us.amazon.nova-lite-v1:0

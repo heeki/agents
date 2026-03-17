@@ -201,6 +201,11 @@ def create_a2a_app() -> FastAPI:
         """Return the Agent Card for A2A discovery."""
         return AGENT_CARD.to_dict()
 
+    @app.get("/.well-known/agent-card.json")
+    async def get_agent_card_v2():
+        """Return the Agent Card at the AgentCore-expected path."""
+        return AGENT_CARD.to_dict()
+
     @app.get("/health")
     async def health_check():
         """Health check endpoint."""
