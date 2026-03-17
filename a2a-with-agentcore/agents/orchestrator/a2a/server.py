@@ -1,17 +1,19 @@
-"""A2A JSON-RPC Server for Orchestrator Agent.
+"""A2A v1 JSON-RPC Server for Orchestrator Agent.
 
-Implements the Google A2A protocol with streaming support.
-All A2A methods are handled at POST / (root endpoint).
+Implements the Google A2A v1 protocol with streaming support.
+JSON-RPC methods: SendMessage, SendStreamingMessage, GetTask, CancelTask.
 """
 
 import asyncio
 import json
 import os
+import re
+import traceback
+import uuid
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
 from sse_starlette.sse import EventSourceResponse
 
 from .auth import oauth2_middleware
@@ -19,13 +21,17 @@ from .types import (
     AgentCard,
     AgentCapabilities,
     AgentSkill,
-    Task,
-    TaskStatus,
-    Message,
-    MessagePart,
+    Artifact,
+    ErrorCode,
     JsonRpcRequest,
     JsonRpcResponse,
-    ErrorCode,
+    Message,
+    Part,
+    Task,
+    TaskArtifactUpdateEvent,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
 )
 
 # Import the Strands agent
@@ -152,6 +158,38 @@ def create_strands_agent() -> Agent:
     return agent
 
 
+def extract_message_from_params(params: dict[str, Any]) -> Message:
+    """Extract Message from SendMessage/SendStreamingMessage params."""
+    msg_data = params.get("message", {})
+    return Message.from_dict(msg_data)
+
+
+def run_agent_and_build_result(message_text: str, task_id: str, context_id: str | None) -> tuple[list[Part], list[Artifact]]:
+    """Run the Strands agent synchronously and return parts and artifacts."""
+    agent = create_strands_agent()
+    result = agent(message_text)
+    result_text = str(result)
+
+    parts = [Part(text=result_text)]
+    artifacts = []
+
+    # Extract structured JSON from the response
+    json_match = re.search(r'```json\s*\n?(.*?)\n?```', result_text, re.DOTALL)
+    if json_match:
+        try:
+            json_text = json_match.group(1).strip()
+            structured_data = json.loads(json_text)
+            artifacts.append(Artifact(
+                name="workout-plan",
+                description="Structured workout plan",
+                parts=[Part(data=structured_data)],
+            ))
+        except json.JSONDecodeError as e:
+            print(f"JSON parsing error: {e}")
+
+    return parts, artifacts
+
+
 def create_a2a_app() -> FastAPI:
     """Create the FastAPI application with A2A endpoints."""
     app = FastAPI(title="Orchestrator Agent - A2A Server")
@@ -166,21 +204,21 @@ def create_a2a_app() -> FastAPI:
     async def root_post(request: Request):
         """Handle all A2A JSON-RPC requests at root endpoint.
 
-        Dispatches to the appropriate handler based on the JSON-RPC method.
-        For tasks/sendSubscribe, returns an SSE streaming response.
+        Dispatches based on the JSON-RPC method field.
+        v1 methods: SendMessage, SendStreamingMessage, GetTask, CancelTask.
         """
         try:
             body = await request.json()
             rpc_request = JsonRpcRequest.from_dict(body)
 
-            # Handle streaming requests
-            if rpc_request.method == "tasks/sendSubscribe":
+            # Streaming methods
+            if rpc_request.method in ("SendStreamingMessage", "tasks/sendSubscribe"):
                 return EventSourceResponse(
-                    stream_task(rpc_request),
+                    stream_send_message(rpc_request),
                     media_type="text/event-stream",
                 )
 
-            # Handle non-streaming requests
+            # Non-streaming methods
             response = await handle_rpc_request(rpc_request)
             return JSONResponse(content=response.to_dict())
         except Exception as e:
@@ -195,6 +233,35 @@ def create_a2a_app() -> FastAPI:
                 },
                 status_code=500,
             )
+
+    # REST-style endpoints per A2A v1 HTTP binding
+    @app.post("/message:send")
+    async def rest_send_message(request: Request):
+        """REST binding for SendMessage."""
+        body = await request.json()
+        rpc_request = JsonRpcRequest(
+            jsonrpc="2.0",
+            id=str(uuid.uuid4()),
+            method="SendMessage",
+            params=body,
+        )
+        response = await handle_rpc_request(rpc_request)
+        return JSONResponse(content=response.to_dict())
+
+    @app.post("/message:stream")
+    async def rest_stream_message(request: Request):
+        """REST binding for SendStreamingMessage."""
+        body = await request.json()
+        rpc_request = JsonRpcRequest(
+            jsonrpc="2.0",
+            id=str(uuid.uuid4()),
+            method="SendStreamingMessage",
+            params=body,
+        )
+        return EventSourceResponse(
+            stream_send_message(rpc_request),
+            media_type="text/event-stream",
+        )
 
     @app.get("/.well-known/agent.json")
     async def get_agent_card():
@@ -220,11 +287,15 @@ def create_a2a_app() -> FastAPI:
 
 
 async def handle_rpc_request(request: JsonRpcRequest) -> JsonRpcResponse:
-    """Handle a JSON-RPC request and return a response."""
+    """Handle a non-streaming JSON-RPC request and return a response."""
     method_handlers = {
-        "tasks/send": handle_task_send,
-        "tasks/get": handle_task_get,
-        "tasks/cancel": handle_task_cancel,
+        "SendMessage": handle_send_message,
+        "GetTask": handle_get_task,
+        "CancelTask": handle_cancel_task,
+        # Backward compatibility with old method names
+        "tasks/send": handle_send_message,
+        "tasks/get": handle_get_task,
+        "tasks/cancel": handle_cancel_task,
     }
 
     handler = method_handlers.get(request.method)
@@ -241,111 +312,72 @@ async def handle_rpc_request(request: JsonRpcRequest) -> JsonRpcResponse:
     return await handler(request)
 
 
-async def handle_task_send(request: JsonRpcRequest) -> JsonRpcResponse:
-    """Handle tasks/send - process a workout request."""
+async def handle_send_message(request: JsonRpcRequest) -> JsonRpcResponse:
+    """Handle SendMessage - process a workout request and return a Task."""
     params = request.params
-    task_data = params.get("task", {})
+    message = extract_message_from_params(params)
 
-    task = Task.from_dict(task_data)
-    task.status = TaskStatus.WORKING
-    tasks[task.id] = task
+    task_id = str(uuid.uuid4())
+    context_id = message.contextId or str(uuid.uuid4())
 
-    # Extract the user's request
-    message_text = task.message.get_text()
+    task = Task(
+        id=task_id,
+        contextId=context_id,
+        status=TaskStatus(state=TaskState.WORKING),
+        history=[message],
+    )
+    tasks[task_id] = task
+
+    message_text = message.get_text()
 
     try:
-        # Run the Strands agent
-        agent = create_strands_agent()
-
-        # Run in a thread pool to avoid blocking
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, agent, message_text)
+        parts, artifacts = await loop.run_in_executor(
+            None, run_agent_and_build_result, message_text, task_id, context_id,
+        )
 
-        # Build result message
-        result_text = str(result)
-        result_parts = [MessagePart(type="text", text=result_text)]
-
-        # Extract structured JSON from the response
-        import re
-        # Extract content between ```json and ``` (handles nested braces correctly)
-        json_match = re.search(r'```json\s*\n?(.*?)\n?```', result_text, re.DOTALL)
-        if json_match:
-            try:
-                json_text = json_match.group(1).strip()
-                structured_data = json.loads(json_text)
-                result_parts.append(
-                    MessagePart(type="data", data=structured_data)
-                )
-            except json.JSONDecodeError as e:
-                # Log the error for debugging
-                print(f"JSON parsing error: {e}")
-                print(f"Failed to parse JSON: {json_text[:200] if len(json_text) > 200 else json_text}")
-                # Continue without structured data
-                pass
-
-        # Also try to extract structured workout data from tool results
-        if hasattr(result, "tool_results"):
-            for tool_result in result.tool_results:
-                if isinstance(tool_result, dict) and "workout" in tool_result:
-                    result_parts.append(
-                        MessagePart(type="data", data=tool_result)
-                    )
-
-        result_message = Message(role="assistant", parts=result_parts)
-
-        # Update task
-        task.status = TaskStatus.COMPLETED
-        task.result = result_message
-        tasks[task.id] = task
+        task.status = TaskStatus(state=TaskState.COMPLETED)
+        task.artifacts = artifacts
+        task.history.append(Message(
+            role="agent",
+            parts=parts,
+            contextId=context_id,
+            taskId=task_id,
+        ))
+        tasks[task_id] = task
 
         return JsonRpcResponse(
             jsonrpc="2.0",
             id=request.id,
-            result={
-                "taskId": task.id,
-                "status": task.status.value,
-                "result": result_message.to_dict(),
-            },
+            result=task.to_dict(),
         )
 
     except Exception as e:
-        import traceback
-        task.status = TaskStatus.FAILED
-        tasks[task.id] = task
-
-        # Get detailed error information
         error_type = type(e).__name__
         error_message = str(e)
-        error_traceback = traceback.format_exc()
-
-        # Log the full error for debugging
+        error_tb = traceback.format_exc()
         print(f"ERROR in orchestrator: {error_type}: {error_message}")
-        print(f"Traceback:\n{error_traceback}")
+        print(f"Traceback:\n{error_tb}")
 
-        # Return detailed error to user
-        detailed_message = f"{error_type}: {error_message}\n\nThis error occurred while processing your workout request. "
-
-        # Add specific guidance for common errors
-        if "ValidationException" in error_type or "validation" in error_message.lower():
-            detailed_message += "The issue appears to be with invalid tool parameters being passed to the AI model. Please try rephrasing your request or contact support if this persists."
-        elif "tool" in error_message.lower():
-            detailed_message += "There was an issue calling one of the sub-agents. Please try again or simplify your request."
-        else:
-            detailed_message += f"Traceback: {error_traceback[:500]}"  # Include first 500 chars of traceback
+        task.status = TaskStatus(
+            state=TaskState.FAILED,
+            message=Message(
+                role="agent",
+                parts=[Part(text=f"{error_type}: {error_message}")],
+            ),
+        )
+        tasks[task_id] = task
 
         return JsonRpcResponse(
             jsonrpc="2.0",
             id=request.id,
-            error={
-                "code": ErrorCode.INTERNAL_ERROR,
-                "message": detailed_message,
-            },
+            result=task.to_dict(),
         )
 
 
-async def handle_task_get(request: JsonRpcRequest) -> JsonRpcResponse:
-    """Handle tasks/get - retrieve task status."""
-    task_id = request.params.get("taskId")
+async def handle_get_task(request: JsonRpcRequest) -> JsonRpcResponse:
+    """Handle GetTask - retrieve task status."""
+    task_id = request.params.get("id") or request.params.get("taskId")
     task = tasks.get(task_id)
 
     if not task:
@@ -361,17 +393,13 @@ async def handle_task_get(request: JsonRpcRequest) -> JsonRpcResponse:
     return JsonRpcResponse(
         jsonrpc="2.0",
         id=request.id,
-        result={
-            "taskId": task.id,
-            "status": task.status.value,
-            "result": task.result.to_dict() if task.result else None,
-        },
+        result=task.to_dict(),
     )
 
 
-async def handle_task_cancel(request: JsonRpcRequest) -> JsonRpcResponse:
-    """Handle tasks/cancel - cancel a running task."""
-    task_id = request.params.get("taskId")
+async def handle_cancel_task(request: JsonRpcRequest) -> JsonRpcResponse:
+    """Handle CancelTask - cancel a running task."""
+    task_id = request.params.get("id") or request.params.get("taskId")
     task = tasks.get(task_id)
 
     if not task:
@@ -384,83 +412,133 @@ async def handle_task_cancel(request: JsonRpcRequest) -> JsonRpcResponse:
             },
         )
 
-    task.status = TaskStatus.CANCELED
+    task.status = TaskStatus(state=TaskState.CANCELED)
     tasks[task_id] = task
 
     return JsonRpcResponse(
         jsonrpc="2.0",
         id=request.id,
-        result={
-            "taskId": task.id,
-            "status": TaskStatus.CANCELED.value,
-        },
+        result=task.to_dict(),
     )
 
 
-async def stream_task(request: JsonRpcRequest):
-    """Stream task execution via SSE."""
-    params = request.params
-    task_data = params.get("task", {})
-    task = Task.from_dict(task_data)
+async def stream_send_message(request: JsonRpcRequest):
+    """Stream task execution via SSE per A2A v1 spec.
 
-    # Send initial status
+    Each SSE event's data field is a JSON-RPC response containing
+    a result that is one of: Task, TaskStatusUpdateEvent, or TaskArtifactUpdateEvent.
+    """
+    params = request.params
+    message = extract_message_from_params(params)
+
+    task_id = str(uuid.uuid4())
+    context_id = message.contextId or str(uuid.uuid4())
+
+    task = Task(
+        id=task_id,
+        contextId=context_id,
+        status=TaskStatus(state=TaskState.SUBMITTED),
+        history=[message],
+    )
+    tasks[task_id] = task
+
+    # Send initial status: submitted
     yield {
-        "event": "task-status",
-        "data": json.dumps({
-            "taskId": task.id,
-            "status": TaskStatus.WORKING.value,
-            "message": "Processing your request...",
-        }),
+        "data": json.dumps(JsonRpcResponse(
+            jsonrpc="2.0",
+            id=request.id,
+            result={"statusUpdate": TaskStatusUpdateEvent(
+                taskId=task_id,
+                contextId=context_id,
+                status=TaskStatus(state=TaskState.SUBMITTED),
+            ).to_dict()},
+        ).to_dict()),
     }
 
-    message_text = task.message.get_text()
+    # Send working status
+    task.status = TaskStatus(state=TaskState.WORKING)
+    tasks[task_id] = task
+
+    yield {
+        "data": json.dumps(JsonRpcResponse(
+            jsonrpc="2.0",
+            id=request.id,
+            result={"statusUpdate": TaskStatusUpdateEvent(
+                taskId=task_id,
+                contextId=context_id,
+                status=TaskStatus(
+                    state=TaskState.WORKING,
+                    message=Message(
+                        role="agent",
+                        parts=[Part(text="Processing your workout request...")],
+                    ),
+                ),
+            ).to_dict()},
+        ).to_dict()),
+    }
+
+    message_text = message.get_text()
 
     try:
-        # Progress updates
-        yield {
-            "event": "task-status",
-            "data": json.dumps({
-                "taskId": task.id,
-                "status": TaskStatus.WORKING.value,
-                "message": "Consulting Biomechanics Lab for optimal workout...",
-            }),
-        }
-
-        # Run the agent (streaming not fully supported with Strands tools)
-        agent = create_strands_agent()
-
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, agent, message_text)
+        parts, artifacts = await loop.run_in_executor(
+            None, run_agent_and_build_result, message_text, task_id, context_id,
+        )
 
-        yield {
-            "event": "task-status",
-            "data": json.dumps({
-                "taskId": task.id,
-                "status": TaskStatus.WORKING.value,
-                "message": "Validating with Life Sync Agent...",
-            }),
-        }
+        # Send artifact updates
+        for artifact in artifacts:
+            yield {
+                "data": json.dumps(JsonRpcResponse(
+                    jsonrpc="2.0",
+                    id=request.id,
+                    result={"artifactUpdate": TaskArtifactUpdateEvent(
+                        taskId=task_id,
+                        contextId=context_id,
+                        artifact=artifact,
+                        lastChunk=True,
+                    ).to_dict()},
+                ).to_dict()),
+            }
 
-        # Send the result
-        result_text = str(result)
+        # Update task to completed
+        task.status = TaskStatus(state=TaskState.COMPLETED)
+        task.artifacts = artifacts
+        task.history.append(Message(
+            role="agent",
+            parts=parts,
+            contextId=context_id,
+            taskId=task_id,
+        ))
+        tasks[task_id] = task
+
+        # Send final task state
         yield {
-            "event": "task-result",
-            "data": json.dumps({
-                "taskId": task.id,
-                "status": TaskStatus.COMPLETED.value,
-                "result": {
-                    "role": "assistant",
-                    "parts": [{"type": "text", "text": result_text}],
-                },
-            }),
+            "data": json.dumps(JsonRpcResponse(
+                jsonrpc="2.0",
+                id=request.id,
+                result={"task": task.to_dict()},
+            ).to_dict()),
         }
 
     except Exception as e:
+        error_type = type(e).__name__
+        error_message = str(e)
+        print(f"ERROR in orchestrator streaming: {error_type}: {error_message}")
+        print(f"Traceback:\n{traceback.format_exc()}")
+
+        task.status = TaskStatus(
+            state=TaskState.FAILED,
+            message=Message(
+                role="agent",
+                parts=[Part(text=f"{error_type}: {error_message}")],
+            ),
+        )
+        tasks[task_id] = task
+
         yield {
-            "event": "task-error",
-            "data": json.dumps({
-                "taskId": task.id,
-                "status": TaskStatus.FAILED.value,
-                "error": str(e),
-            }),
+            "data": json.dumps(JsonRpcResponse(
+                jsonrpc="2.0",
+                id=request.id,
+                result={"task": task.to_dict()},
+            ).to_dict()),
         }

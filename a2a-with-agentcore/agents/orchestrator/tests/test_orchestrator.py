@@ -3,24 +3,22 @@
 import unittest
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from a2a.types import Message, MessagePart, Task, TaskStatus
+from a2a.types import Message, Part, Task, TaskState, TaskStatus
 
 
 class TestA2ATypes(unittest.TestCase):
-    """Tests for A2A type definitions."""
+    """Tests for A2A v1 type definitions."""
 
-    def test_message_part_text(self):
-        """Should create text message part."""
-        part = MessagePart(type="text", text="Hello")
-        self.assertEqual(part.type, "text")
+    def test_part_text(self):
+        """Should create text part."""
+        part = Part(text="Hello")
         self.assertEqual(part.text, "Hello")
         self.assertIsNone(part.data)
 
-    def test_message_part_data(self):
-        """Should create data message part."""
+    def test_part_data(self):
+        """Should create data part."""
         data = {"workout": {"name": "Test"}}
-        part = MessagePart(type="data", data=data)
-        self.assertEqual(part.type, "data")
+        part = Part(data=data)
         self.assertEqual(part.data, data)
         self.assertIsNone(part.text)
 
@@ -28,55 +26,45 @@ class TestA2ATypes(unittest.TestCase):
         """Should serialize message to dict."""
         message = Message(
             role="user",
-            parts=[
-                MessagePart(type="text", text="Create a workout"),
-            ],
+            parts=[Part(text="Create a workout")],
         )
         result = message.to_dict()
         self.assertEqual(result["role"], "user")
         self.assertEqual(len(result["parts"]), 1)
-        self.assertEqual(result["parts"][0]["type"], "text")
+        self.assertIn("text", result["parts"][0])
 
     def test_message_get_text(self):
         """Should extract text from message parts."""
         message = Message(
             role="user",
             parts=[
-                MessagePart(type="text", text="Hello"),
-                MessagePart(type="data", data={"key": "value"}),
-                MessagePart(type="text", text="World"),
+                Part(text="Hello"),
+                Part(data={"key": "value"}),
+                Part(text="World"),
             ],
         )
         self.assertEqual(message.get_text(), "Hello World")
 
-    def test_task_from_dict(self):
-        """Should deserialize task from dict."""
-        data = {
-            "id": "task-123",
-            "message": {
-                "role": "user",
-                "parts": [{"type": "text", "text": "Test"}],
-            },
-            "status": "pending",
-        }
-        task = Task.from_dict(data)
-        self.assertEqual(task.id, "task-123")
-        self.assertEqual(task.status, TaskStatus.PENDING)
-        self.assertEqual(task.message.role, "user")
-
-    def test_task_to_dict(self):
-        """Should serialize task to dict."""
+    def test_task_status(self):
+        """Should create task with status object."""
         task = Task(
             id="task-456",
-            message=Message(
-                role="user",
-                parts=[MessagePart(type="text", text="Test")],
-            ),
-            status=TaskStatus.COMPLETED,
+            status=TaskStatus(state=TaskState.COMPLETED),
         )
         result = task.to_dict()
         self.assertEqual(result["id"], "task-456")
-        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["status"]["state"], "completed")
+
+    def test_task_states(self):
+        """Should support all v1 task states."""
+        self.assertEqual(TaskState.SUBMITTED.value, "submitted")
+        self.assertEqual(TaskState.WORKING.value, "working")
+        self.assertEqual(TaskState.COMPLETED.value, "completed")
+        self.assertEqual(TaskState.FAILED.value, "failed")
+        self.assertEqual(TaskState.CANCELED.value, "canceled")
+        self.assertEqual(TaskState.INPUT_REQUIRED.value, "input-required")
+        self.assertEqual(TaskState.AUTH_REQUIRED.value, "auth-required")
+        self.assertEqual(TaskState.REJECTED.value, "rejected")
 
 
 class TestA2AClient(unittest.TestCase):
@@ -108,10 +96,7 @@ class TestOrchestratorFlow(unittest.TestCase):
         message = Message(
             role="user",
             parts=[
-                MessagePart(
-                    type="text",
-                    text="I want a strength workout for upper body",
-                ),
+                Part(text="I want a strength workout for upper body"),
             ],
         )
 

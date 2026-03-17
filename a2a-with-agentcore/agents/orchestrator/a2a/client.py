@@ -14,9 +14,10 @@ import httpx
 
 from .types import (
     Task,
+    TaskState,
     TaskStatus,
     Message,
-    MessagePart,
+    Part,
     JsonRpcRequest,
     JsonRpcResponse,
     ErrorCode,
@@ -124,12 +125,9 @@ class A2AClient:
         request = JsonRpcRequest(
             jsonrpc="2.0",
             id=task_id,
-            method="tasks/send",
+            method="SendMessage",
             params={
-                "task": {
-                    "id": task_id,
-                    "message": message.to_dict(),
-                }
+                "message": message.to_dict(),
             },
         )
 
@@ -152,12 +150,9 @@ class A2AClient:
         request_body = {
             "jsonrpc": "2.0",
             "id": task_id,
-            "method": "tasks/sendSubscribe",
+            "method": "SendStreamingMessage",
             "params": {
-                "task": {
-                    "id": task_id,
-                    "message": message.to_dict(),
-                }
+                "message": message.to_dict(),
             },
         }
 
@@ -192,8 +187,8 @@ class A2AClient:
         request = JsonRpcRequest(
             jsonrpc="2.0",
             id=f"get-{task_id}",
-            method="tasks/get",
-            params={"taskId": task_id},
+            method="GetTask",
+            params={"id": task_id},
         )
 
         return await self._send_request(request)
@@ -210,8 +205,8 @@ class A2AClient:
         request = JsonRpcRequest(
             jsonrpc="2.0",
             id=f"cancel-{task_id}",
-            method="tasks/cancel",
-            params={"taskId": task_id},
+            method="CancelTask",
+            params={"id": task_id},
         )
 
         return await self._send_request(request)

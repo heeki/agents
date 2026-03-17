@@ -17,7 +17,7 @@ COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID", "")
 REQUIRED_SCOPE = "a2a-fitness-api/invoke"
 
 # Paths that skip authentication
-PUBLIC_PATHS = {"/health", "/ping", "/.well-known/agent.json"}
+PUBLIC_PATHS = {"/health", "/ping", "/.well-known/agent.json", "/.well-known/agent-card.json"}
 
 _jwks_client: PyJWKClient | None = None
 
