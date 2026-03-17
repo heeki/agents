@@ -23,6 +23,11 @@ cognito.secrethash:
 	uv run iac/generate_secrethash.py ${P_COGNITO_USERNAME} ${O_COGNITO_CLIENTID} ${O_COGNITO_CLIENTSECRET}
 cognito.login:
 	aws --profile ${PROFILE} cognito-idp initiate-auth --client-id ${O_COGNITO_CLIENTID} --auth-flow USER_PASSWORD_AUTH --auth-parameters SECRET_HASH="${P_COGNITO_SECRETHASH}",USERNAME="${P_COGNITO_USERNAME}",PASSWORD="${P_COGNITO_USERPERMPW}" | jq | tee tmp/cognito_login.json
+cognito.token:
+	@curl -s -X POST "${O_COGNITO_DOMAIN}/oauth2/token" \
+		-H "Content-Type: application/x-www-form-urlencoded" \
+		-u "${O_COGNITO_M2M_CLIENTID}:${O_COGNITO_M2M_CLIENTSECRET}" \
+		-d "grant_type=client_credentials&scope=a2a-fitness-api/invoke a2a-fitness-api/read" | jq | tee tmp/cognito_token.json
 
 # ============================================================================
 # API GATEWAY

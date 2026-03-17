@@ -11,8 +11,10 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from sse_starlette.sse import EventSourceResponse
 
+from .auth import oauth2_middleware
 from .types import (
     AgentCard,
     AgentCapabilities,
@@ -36,6 +38,8 @@ from tools import call_biomechanics_lab, call_life_sync_agent, request_workout_c
 tasks: dict[str, Task] = {}
 
 # Agent configuration
+COGNITO_DOMAIN = os.environ.get("COGNITO_DOMAIN", "")
+
 AGENT_CARD = AgentCard(
     name="orchestrator",
     description="Central coordinator for the fitness multi-agent system. Translates user goals into workout plans and resolves conflicts between ideal training and real-world constraints.",
@@ -54,6 +58,18 @@ AGENT_CARD = AgentCard(
             description="Adjusts workout plans when conflicts with schedule or equipment are detected",
         ),
     ],
+    authentication={
+        "schemes": ["OAuth2"],
+        "credentials": {
+            "oauth2": {
+                "tokenUrl": f"{COGNITO_DOMAIN}/oauth2/token" if COGNITO_DOMAIN else "",
+                "scopes": {
+                    "a2a-fitness-api/invoke": "Invoke fitness agents",
+                    "a2a-fitness-api/read": "Read agent cards and status",
+                },
+            }
+        },
+    } if COGNITO_DOMAIN else None,
 )
 
 SYSTEM_PROMPT = """You are the central coordinator for a fitness multi-agent system.
@@ -139,6 +155,7 @@ def create_strands_agent() -> Agent:
 def create_a2a_app() -> FastAPI:
     """Create the FastAPI application with A2A endpoints."""
     app = FastAPI(title="Orchestrator Agent - A2A Server")
+    app.middleware("http")(oauth2_middleware)
 
     @app.get("/")
     async def root():

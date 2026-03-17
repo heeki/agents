@@ -199,9 +199,10 @@ class AgentCard:
     version: str = "1.0.0"
     capabilities: AgentCapabilities = field(default_factory=AgentCapabilities)
     skills: list[AgentSkill] = field(default_factory=list)
+    authentication: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "name": self.name,
             "description": self.description,
             "url": self.url,
@@ -209,3 +210,6 @@ class AgentCard:
             "capabilities": self.capabilities.to_dict(),
             "skills": [s.to_dict() for s in self.skills],
         }
+        if self.authentication is not None:
+            result["authentication"] = self.authentication
+        return result

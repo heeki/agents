@@ -49,9 +49,9 @@ Resources:
       Identifier: a2a-fitness-api
       Name: A2A Fitness API
       Scopes:
-        - ScopeName: agents:invoke
+        - ScopeName: invoke
           ScopeDescription: "Invoke fitness agents"
-        - ScopeName: agents:read
+        - ScopeName: read
           ScopeDescription: "Read agent cards and status"
       UserPoolId: !Ref UserPool
 
@@ -64,14 +64,13 @@ Resources:
       GenerateSecret: true
       AllowedOAuthFlowsUserPoolClient: true
       AllowedOAuthFlows:
-        - client_credentials
         - code
       AllowedOAuthScopes:
         - openid
         - email
         - profile
-        - a2a-fitness-api/agents:invoke
-        - a2a-fitness-api/agents:read
+        - a2a-fitness-api/invoke
+        - a2a-fitness-api/read
       SupportedIdentityProviders:
         - COGNITO
       CallbackURLs:
@@ -83,17 +82,30 @@ Resources:
         - ALLOW_USER_PASSWORD_AUTH
         - ALLOW_REFRESH_TOKEN_AUTH
 
+  M2MClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: ResourceServer
+    Properties:
+      ClientName: a2a-fitness-m2m-client
+      UserPoolId: !Ref UserPool
+      GenerateSecret: true
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthScopes:
+        - a2a-fitness-api/invoke
+        - a2a-fitness-api/read
+
   TestUser:
     Type: AWS::Cognito::UserPoolUser
     Properties:
-      Username: !Ref userName
+      Username: !Ref userEmail
       UserPoolId: !Ref UserPool
       UserAttributes:
         - Name: email
           Value: !Ref userEmail
         - Name: email_verified
           Value: "true"
-      ForceAliasCreation: true
 
 Outputs:
   outUserPoolId:
@@ -118,9 +130,15 @@ Outputs:
 
   outClientId:
     Value: !Ref AppClient
-    Description: Cognito App Client ID
+    Description: Cognito App Client ID (user auth)
     Export:
       Name: a2a-cognito-client-id
+
+  outM2MClientId:
+    Value: !Ref M2MClient
+    Description: Cognito M2M Client ID (client_credentials)
+    Export:
+      Name: a2a-cognito-m2m-client-id
 
   outDomain:
     Value: !Sub "https://${domainPrefix}.auth.${AWS::Region}.amazoncognito.com"
