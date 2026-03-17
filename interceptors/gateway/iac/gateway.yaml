@@ -115,7 +115,7 @@ Resources:
     Type: AWS::Cognito::UserPoolClient
     DependsOn: CognitoResourceServer
     Properties:
-      ClientName: !Sub "${pGatewayName}-client"
+      ClientName: !Sub "${pGatewayName}-m2m-client"
       UserPoolId: !Ref CognitoUserPool
       GenerateSecret: true
       AllowedOAuthFlows:
@@ -123,6 +123,28 @@ Resources:
       AllowedOAuthFlowsUserPoolClient: true
       AllowedOAuthScopes:
         - !Sub "https://${pGatewayName}.agentcore.local/invoke"
+        - !Sub "https://${pGatewayName}.agentcore.local/hello_world:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/hello_world:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/fetch_webpage:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/fetch_webpage:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/geocode_location:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/geocode_location:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/reverse_geocode:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/reverse_geocode:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_weather:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_weather:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_exchange_rate:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_exchange_rate:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_ip_info:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_ip_info:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/web_search:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/web_search:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_current_time:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_current_time:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/calculate_math:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/calculate_math:write"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_public_holidays:read"
+        - !Sub "https://${pGatewayName}.agentcore.local/get_public_holidays:write"
       SupportedIdentityProviders:
         - COGNITO
 
