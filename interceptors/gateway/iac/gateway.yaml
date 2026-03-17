@@ -59,7 +59,7 @@ Resources:
   CognitoResourceServer:
     Type: AWS::Cognito::UserPoolResourceServer
     Properties:
-      Identifier: !Sub "https://${pGatewayName}.agentcore.local"
+      Identifier: interceptor
       Name: !Sub "${pGatewayName}-resource-server"
       UserPoolId: !Ref CognitoUserPool
       Scopes:
@@ -122,29 +122,29 @@ Resources:
         - client_credentials
       AllowedOAuthFlowsUserPoolClient: true
       AllowedOAuthScopes:
-        - !Sub "https://${pGatewayName}.agentcore.local/invoke"
-        - !Sub "https://${pGatewayName}.agentcore.local/hello_world:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/hello_world:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/fetch_webpage:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/fetch_webpage:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/geocode_location:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/geocode_location:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/reverse_geocode:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/reverse_geocode:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_weather:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_weather:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_exchange_rate:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_exchange_rate:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_ip_info:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_ip_info:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/web_search:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/web_search:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_current_time:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_current_time:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/calculate_math:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/calculate_math:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_public_holidays:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_public_holidays:write"
+        - "interceptor/invoke"
+        - "interceptor/hello_world:read"
+        - "interceptor/hello_world:write"
+        - "interceptor/fetch_webpage:read"
+        - "interceptor/fetch_webpage:write"
+        - "interceptor/geocode_location:read"
+        - "interceptor/geocode_location:write"
+        - "interceptor/reverse_geocode:read"
+        - "interceptor/reverse_geocode:write"
+        - "interceptor/get_weather:read"
+        - "interceptor/get_weather:write"
+        - "interceptor/get_exchange_rate:read"
+        - "interceptor/get_exchange_rate:write"
+        - "interceptor/get_ip_info:read"
+        - "interceptor/get_ip_info:write"
+        - "interceptor/web_search:read"
+        - "interceptor/web_search:write"
+        - "interceptor/get_current_time:read"
+        - "interceptor/get_current_time:write"
+        - "interceptor/calculate_math:read"
+        - "interceptor/calculate_math:write"
+        - "interceptor/get_public_holidays:read"
+        - "interceptor/get_public_holidays:write"
       SupportedIdentityProviders:
         - COGNITO
 
@@ -166,29 +166,29 @@ Resources:
         - openid
         - email
         - profile
-        - !Sub "https://${pGatewayName}.agentcore.local/invoke"
-        - !Sub "https://${pGatewayName}.agentcore.local/hello_world:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/hello_world:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/fetch_webpage:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/fetch_webpage:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/geocode_location:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/geocode_location:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/reverse_geocode:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/reverse_geocode:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_weather:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_weather:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_exchange_rate:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_exchange_rate:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_ip_info:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_ip_info:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/web_search:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/web_search:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_current_time:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_current_time:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/calculate_math:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/calculate_math:write"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_public_holidays:read"
-        - !Sub "https://${pGatewayName}.agentcore.local/get_public_holidays:write"
+        - "interceptor/invoke"
+        - "interceptor/hello_world:read"
+        - "interceptor/hello_world:write"
+        - "interceptor/fetch_webpage:read"
+        - "interceptor/fetch_webpage:write"
+        - "interceptor/geocode_location:read"
+        - "interceptor/geocode_location:write"
+        - "interceptor/reverse_geocode:read"
+        - "interceptor/reverse_geocode:write"
+        - "interceptor/get_weather:read"
+        - "interceptor/get_weather:write"
+        - "interceptor/get_exchange_rate:read"
+        - "interceptor/get_exchange_rate:write"
+        - "interceptor/get_ip_info:read"
+        - "interceptor/get_ip_info:write"
+        - "interceptor/web_search:read"
+        - "interceptor/web_search:write"
+        - "interceptor/get_current_time:read"
+        - "interceptor/get_current_time:write"
+        - "interceptor/calculate_math:read"
+        - "interceptor/calculate_math:write"
+        - "interceptor/get_public_holidays:read"
+        - "interceptor/get_public_holidays:write"
       CallbackURLs:
         - "https://localhost"
       SupportedIdentityProviders:
@@ -347,7 +347,7 @@ Resources:
             OauthCredentialProvider:
               ProviderArn: !Ref pCredentialProviderArn
               Scopes:
-                - !Sub "https://${pGatewayName}.agentcore.local/invoke"
+                - "interceptor/invoke"
       MetadataConfiguration:
         AllowedRequestHeaders:
           - x-amzn-bedrock-agentcore-runtime-custom-interceptor-demo

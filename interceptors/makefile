@@ -93,7 +93,7 @@ runtime.invoke:
 		--cognito-domain $(P_COGNITO_DOMAIN) \
 		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
 		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
-		--scope "https://$(P_GATEWAY_NAME).agentcore.local/invoke"
+		--scope "interceptor/invoke"
 
 runtime.invoke.m2m.all-tools:
 	python3 app/mcpserver/test_runtime.py $(O_RUNTIME_ARN) --region $(REGION) \
@@ -101,7 +101,7 @@ runtime.invoke.m2m.all-tools:
 		--cognito-domain $(P_COGNITO_DOMAIN) \
 		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
 		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
-		--scope "https://$(P_GATEWAY_NAME).agentcore.local/invoke" \
+		--scope "interceptor/invoke" \
 		--all-tools
 
 runtime.invoke.user:
@@ -243,14 +243,14 @@ gateway.invoke:
 		--cognito-domain $(P_COGNITO_DOMAIN) \
 		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
 		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
-		--scope "https://$(P_GATEWAY_NAME).agentcore.local/invoke"
+		--scope "interceptor/invoke"
 
 gateway.invoke.m2m.all-tools:
 	python3 gateway/test_gateway.py $(O_GATEWAY_URL) --region $(REGION) \
 		--cognito-domain $(P_COGNITO_DOMAIN) \
 		--cognito-user-pool-id $(O_COGNITO_USER_POOL_ID) \
 		--cognito-client-id $(O_COGNITO_CLIENT_ID) \
-		--scope "https://$(P_GATEWAY_NAME).agentcore.local/invoke" \
+		--scope "interceptor/invoke" \
 		--all-tools
 
 gateway.invoke.user:
