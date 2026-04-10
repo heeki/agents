@@ -1,0 +1,15 @@
+{
+  "name": "weather-mcp-server",
+  "descriptorType": "MCP",
+  "descriptors": {
+    "mcp": {
+      "server": {
+        "inlineContent": {
+          "name": "io.example/weather",
+          "description": "Weather data MCP server",
+          "version": "1.0.0"
+        }
+      }
+    }
+  }
+}
