@@ -9,6 +9,8 @@ import express, { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import {
   AgentCard,
+  Message,
+  MessagePart,
   Task,
   TaskStatus,
   JsonRpcRequest,
@@ -67,7 +69,10 @@ export function createA2AServer() {
     const rpcRequest = req.body as JsonRpcRequest;
 
     // Handle streaming requests
-    if (rpcRequest.method === "tasks/sendSubscribe") {
+    if (
+      rpcRequest.method === "tasks/sendSubscribe" ||
+      rpcRequest.method === "message/stream"
+    ) {
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
@@ -103,8 +108,12 @@ export function createA2AServer() {
     }
   });
 
-  // Agent Card endpoint
+  // Agent Card endpoints
   app.get("/.well-known/agent.json", (_req: Request, res: Response) => {
+    res.json(AGENT_CARD);
+  });
+
+  app.get("/.well-known/agent-card.json", (_req: Request, res: Response) => {
     res.json(AGENT_CARD);
   });
 
@@ -121,10 +130,53 @@ export function createA2AServer() {
   return app;
 }
 
+/**
+ * Normalize parts from A2A v1 format (kind discriminator) to internal format (type discriminator).
+ */
+function normalizeParts(
+  parts: Array<Record<string, unknown>>
+): MessagePart[] {
+  return parts.map((p) => ({
+    type: ((p.kind as string) || (p.type as string) || "text") as "text" | "data",
+    text: p.text as string | undefined,
+    data: p.data as Record<string, unknown> | undefined,
+  }));
+}
+
+/**
+ * Extract a Task object from either v1 (message/send) or legacy (tasks/send) request params.
+ */
+function extractTaskFromParams(request: JsonRpcRequest): Task {
+  const params = request.params as Record<string, unknown>;
+
+  // A2A v1: message/send — params.message contains the message directly
+  if (params.message && !params.task) {
+    const msg = params.message as Record<string, unknown>;
+    const rawParts = (msg.parts as Array<Record<string, unknown>>) || [];
+    return {
+      id: request.id,
+      message: {
+        role: (msg.role as "user" | "assistant") || "user",
+        parts: normalizeParts(rawParts),
+      },
+    };
+  }
+
+  // Legacy: tasks/send — params.task contains the full task
+  const task = params.task as Task;
+  if (task?.message?.parts) {
+    task.message.parts = normalizeParts(
+      task.message.parts as unknown as Array<Record<string, unknown>>
+    );
+  }
+  return task;
+}
+
 async function handleRpcRequest(
   request: JsonRpcRequest
 ): Promise<JsonRpcResponse> {
   switch (request.method) {
+    case "message/send":
     case "tasks/send":
       return handleTaskSend(request);
     case "tasks/get":
@@ -143,8 +195,7 @@ async function handleRpcRequest(
 async function handleTaskSend(
   request: JsonRpcRequest
 ): Promise<JsonRpcResponse> {
-  const params = request.params as { task: Task };
-  const task = params.task;
+  const task = extractTaskFromParams(request);
 
   // Store the task
   tasks.set(task.id, { ...task, status: TaskStatus.WORKING });
@@ -247,8 +298,7 @@ async function handleStreamingRequest(
   request: JsonRpcRequest,
   res: Response
 ): Promise<void> {
-  const params = request.params as { task: Task };
-  const task = params.task;
+  const task = extractTaskFromParams(request);
 
   // Send initial status
   res.write(

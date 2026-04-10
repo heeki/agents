@@ -161,7 +161,8 @@ def create_strands_agent() -> Agent:
 def extract_message_from_params(params: dict[str, Any]) -> Message:
     """Extract Message from SendMessage/SendStreamingMessage params."""
     msg_data = params.get("message", {})
-    return Message.from_dict(msg_data)
+    msg = Message.from_dict(msg_data)
+    return msg
 
 
 def run_agent_and_build_result(message_text: str, task_id: str, context_id: str | None) -> tuple[list[Part], list[Artifact]]:
@@ -170,7 +171,7 @@ def run_agent_and_build_result(message_text: str, task_id: str, context_id: str 
     result = agent(message_text)
     result_text = str(result)
 
-    parts = [Part(text=result_text)]
+    parts = [Part(kind="text", text=result_text)]
     artifacts = []
 
     # Extract structured JSON from the response
@@ -182,7 +183,7 @@ def run_agent_and_build_result(message_text: str, task_id: str, context_id: str 
             artifacts.append(Artifact(
                 name="workout-plan",
                 description="Structured workout plan",
-                parts=[Part(data=structured_data)],
+                parts=[Part(kind="data", data=structured_data)],
             ))
         except json.JSONDecodeError as e:
             print(f"JSON parsing error: {e}")
@@ -212,7 +213,7 @@ def create_a2a_app() -> FastAPI:
             rpc_request = JsonRpcRequest.from_dict(body)
 
             # Streaming methods
-            if rpc_request.method in ("SendStreamingMessage", "tasks/sendSubscribe"):
+            if rpc_request.method in ("message/stream", "SendStreamingMessage", "tasks/sendSubscribe"):
                 return EventSourceResponse(
                     stream_send_message(rpc_request),
                     media_type="text/event-stream",
@@ -289,13 +290,16 @@ def create_a2a_app() -> FastAPI:
 async def handle_rpc_request(request: JsonRpcRequest) -> JsonRpcResponse:
     """Handle a non-streaming JSON-RPC request and return a response."""
     method_handlers = {
+        # A2A v1 JSON-RPC method names
+        "message/send": handle_send_message,
+        "tasks/get": handle_get_task,
+        "tasks/cancel": handle_cancel_task,
+        # gRPC/PascalCase aliases
         "SendMessage": handle_send_message,
         "GetTask": handle_get_task,
         "CancelTask": handle_cancel_task,
-        # Backward compatibility with old method names
+        # Legacy method names
         "tasks/send": handle_send_message,
-        "tasks/get": handle_get_task,
-        "tasks/cancel": handle_cancel_task,
     }
 
     handler = method_handlers.get(request.method)
@@ -318,11 +322,11 @@ async def handle_send_message(request: JsonRpcRequest) -> JsonRpcResponse:
     message = extract_message_from_params(params)
 
     task_id = str(uuid.uuid4())
-    context_id = message.contextId or str(uuid.uuid4())
+    context_id = message.context_id or str(uuid.uuid4())
 
     task = Task(
         id=task_id,
-        contextId=context_id,
+        context_id=context_id,
         status=TaskStatus(state=TaskState.WORKING),
         history=[message],
     )
@@ -341,8 +345,8 @@ async def handle_send_message(request: JsonRpcRequest) -> JsonRpcResponse:
         task.history.append(Message(
             role="agent",
             parts=parts,
-            contextId=context_id,
-            taskId=task_id,
+            context_id=context_id,
+            task_id=task_id,
         ))
         tasks[task_id] = task
 
@@ -363,7 +367,7 @@ async def handle_send_message(request: JsonRpcRequest) -> JsonRpcResponse:
             state=TaskState.FAILED,
             message=Message(
                 role="agent",
-                parts=[Part(text=f"{error_type}: {error_message}")],
+                parts=[Part(kind="text", text=f"{error_type}: {error_message}")],
             ),
         )
         tasks[task_id] = task
@@ -422,60 +426,56 @@ async def handle_cancel_task(request: JsonRpcRequest) -> JsonRpcResponse:
     )
 
 
+def _sse_event(request_id: str, result_obj: dict[str, Any]) -> dict[str, str]:
+    """Build an SSE event dict with a JSON-RPC response wrapping the result."""
+    return {
+        "data": json.dumps(JsonRpcResponse(
+            jsonrpc="2.0",
+            id=request_id,
+            result=result_obj,
+        ).to_dict()),
+    }
+
+
 async def stream_send_message(request: JsonRpcRequest):
     """Stream task execution via SSE per A2A v1 spec.
 
-    Each SSE event's data field is a JSON-RPC response containing
-    a result that is one of: Task, TaskStatusUpdateEvent, or TaskArtifactUpdateEvent.
+    Each SSE event data is a JSON-RPC response where `result` is one of the
+    typed objects with a `kind` discriminator: status-update, artifact-update,
+    message, or task.
     """
     params = request.params
     message = extract_message_from_params(params)
 
     task_id = str(uuid.uuid4())
-    context_id = message.contextId or str(uuid.uuid4())
+    context_id = message.context_id or str(uuid.uuid4())
 
     task = Task(
         id=task_id,
-        contextId=context_id,
+        context_id=context_id,
         status=TaskStatus(state=TaskState.SUBMITTED),
         history=[message],
     )
     tasks[task_id] = task
 
     # Send initial status: submitted
-    yield {
-        "data": json.dumps(JsonRpcResponse(
-            jsonrpc="2.0",
-            id=request.id,
-            result={"statusUpdate": TaskStatusUpdateEvent(
-                taskId=task_id,
-                contextId=context_id,
-                status=TaskStatus(state=TaskState.SUBMITTED),
-            ).to_dict()},
-        ).to_dict()),
-    }
+    yield _sse_event(request.id, TaskStatusUpdateEvent(
+        task_id=task_id, context_id=context_id,
+        status=TaskStatus(state=TaskState.SUBMITTED), final=False,
+    ).to_dict())
 
     # Send working status
     task.status = TaskStatus(state=TaskState.WORKING)
     tasks[task_id] = task
 
-    yield {
-        "data": json.dumps(JsonRpcResponse(
-            jsonrpc="2.0",
-            id=request.id,
-            result={"statusUpdate": TaskStatusUpdateEvent(
-                taskId=task_id,
-                contextId=context_id,
-                status=TaskStatus(
-                    state=TaskState.WORKING,
-                    message=Message(
-                        role="agent",
-                        parts=[Part(text="Processing your workout request...")],
-                    ),
-                ),
-            ).to_dict()},
-        ).to_dict()),
-    }
+    yield _sse_event(request.id, TaskStatusUpdateEvent(
+        task_id=task_id, context_id=context_id,
+        status=TaskStatus(
+            state=TaskState.WORKING,
+            message=Message(role="agent", parts=[Part(kind="text", text="Processing your workout request...")]),
+        ),
+        final=False,
+    ).to_dict())
 
     message_text = message.get_text()
 
@@ -487,38 +487,25 @@ async def stream_send_message(request: JsonRpcRequest):
 
         # Send artifact updates
         for artifact in artifacts:
-            yield {
-                "data": json.dumps(JsonRpcResponse(
-                    jsonrpc="2.0",
-                    id=request.id,
-                    result={"artifactUpdate": TaskArtifactUpdateEvent(
-                        taskId=task_id,
-                        contextId=context_id,
-                        artifact=artifact,
-                        lastChunk=True,
-                    ).to_dict()},
-                ).to_dict()),
-            }
+            yield _sse_event(request.id, TaskArtifactUpdateEvent(
+                task_id=task_id, context_id=context_id,
+                artifact=artifact, last_chunk=True,
+            ).to_dict())
 
-        # Update task to completed
+        # Send the agent message (clients extract the response from this)
+        agent_message = Message(
+            role="agent", parts=parts,
+            context_id=context_id, task_id=task_id,
+        )
+        yield _sse_event(request.id, agent_message.to_dict())
+
+        # Update task to completed and send final task
         task.status = TaskStatus(state=TaskState.COMPLETED)
         task.artifacts = artifacts
-        task.history.append(Message(
-            role="agent",
-            parts=parts,
-            contextId=context_id,
-            taskId=task_id,
-        ))
+        task.history.append(agent_message)
         tasks[task_id] = task
 
-        # Send final task state
-        yield {
-            "data": json.dumps(JsonRpcResponse(
-                jsonrpc="2.0",
-                id=request.id,
-                result={"task": task.to_dict()},
-            ).to_dict()),
-        }
+        yield _sse_event(request.id, task.to_dict())
 
     except Exception as e:
         error_type = type(e).__name__
@@ -526,19 +513,13 @@ async def stream_send_message(request: JsonRpcRequest):
         print(f"ERROR in orchestrator streaming: {error_type}: {error_message}")
         print(f"Traceback:\n{traceback.format_exc()}")
 
-        task.status = TaskStatus(
-            state=TaskState.FAILED,
-            message=Message(
-                role="agent",
-                parts=[Part(text=f"{error_type}: {error_message}")],
-            ),
+        error_msg = Message(
+            role="agent", parts=[Part(kind="text", text=f"{error_type}: {error_message}")],
+            context_id=context_id, task_id=task_id,
         )
+        yield _sse_event(request.id, error_msg.to_dict())
+
+        task.status = TaskStatus(state=TaskState.FAILED, message=error_msg)
         tasks[task_id] = task
 
-        yield {
-            "data": json.dumps(JsonRpcResponse(
-                jsonrpc="2.0",
-                id=request.id,
-                result={"task": task.to_dict()},
-            ).to_dict()),
-        }
+        yield _sse_event(request.id, task.to_dict())

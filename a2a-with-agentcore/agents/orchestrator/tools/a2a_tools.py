@@ -60,8 +60,8 @@ def call_biomechanics_lab(
     message = Message(
         role="user",
         parts=[
-            Part(text=text_content),
-            Part(data={
+            Part(kind="text", text=text_content),
+            Part(kind="data", data={
                     "goal": goal,
                     "constraints": {
                         "duration": duration_minutes if duration_minutes is not None else 0,
@@ -148,8 +148,8 @@ def call_life_sync_agent(
     message = Message(
         role="user",
         parts=[
-            Part(text=text_content),
-            Part(data={
+            Part(kind="text", text=text_content),
+            Part(kind="data", data={
                     "workout": workout_data,
                     "date": date,
                     "location": location,
@@ -230,8 +230,8 @@ Please prioritize intensity over duration. Suggest alternatives that maintain tr
     message = Message(
         role="user",
         parts=[
-            Part(text=text_content),
-            Part(data={
+            Part(kind="text", text=text_content),
+            Part(kind="data", data={
                     "goal": original_goal,
                     "constraints": {
                         "duration": available_time or 30,

@@ -78,7 +78,7 @@ def create_a2a_app() -> FastAPI:
             rpc_request = JsonRpcRequest.from_dict(body)
 
             # Handle streaming requests
-            if rpc_request.method == "tasks/sendSubscribe":
+            if rpc_request.method in ("tasks/sendSubscribe", "message/stream"):
                 return EventSourceResponse(
                     stream_task(rpc_request),
                     media_type="text/event-stream",
@@ -105,6 +105,11 @@ def create_a2a_app() -> FastAPI:
         """Return the Agent Card for A2A discovery."""
         return AGENT_CARD.to_dict()
 
+    @app.get("/.well-known/agent-card.json")
+    async def get_agent_card_v2():
+        """Return the Agent Card at the AgentCore-expected path."""
+        return AGENT_CARD.to_dict()
+
     @app.get("/health")
     async def health_check():
         """Health check endpoint."""
@@ -118,9 +123,44 @@ def create_a2a_app() -> FastAPI:
     return app
 
 
+def normalize_parts(parts: list[dict]) -> list[dict]:
+    """Normalize parts from A2A v1 (kind discriminator) to internal format (type discriminator)."""
+    normalized = []
+    for p in parts:
+        normalized.append({
+            "type": p.get("kind", p.get("type", "text")),
+            "text": p.get("text"),
+            "data": p.get("data"),
+        })
+    return normalized
+
+
+def extract_message_and_task(request: JsonRpcRequest) -> Task:
+    """Extract a Task from either v1 (message/send) or legacy (tasks/send) request params."""
+    params = request.params
+
+    # A2A v1: message/send — params.message contains the message directly
+    if "message" in params and "task" not in params:
+        msg_data = params["message"]
+        raw_parts = msg_data.get("parts", [])
+        normalized = normalize_parts(raw_parts)
+        message = Message(
+            role=msg_data.get("role", "user"),
+            parts=[MessagePart.from_dict(p) for p in normalized],
+        )
+        return Task(id=request.id, message=message)
+
+    # Legacy: tasks/send — params.task contains the full task
+    task_data = params.get("task", {})
+    if "message" in task_data and "parts" in task_data.get("message", {}):
+        task_data["message"]["parts"] = normalize_parts(task_data["message"]["parts"])
+    return Task.from_dict(task_data)
+
+
 async def handle_rpc_request(request: JsonRpcRequest) -> JsonRpcResponse:
     """Handle a JSON-RPC request and return a response."""
     method_handlers = {
+        "message/send": handle_task_send,
         "tasks/send": handle_task_send,
         "tasks/get": handle_task_get,
         "tasks/cancel": handle_task_cancel,
@@ -141,11 +181,8 @@ async def handle_rpc_request(request: JsonRpcRequest) -> JsonRpcResponse:
 
 
 async def handle_task_send(request: JsonRpcRequest) -> JsonRpcResponse:
-    """Handle tasks/send - validate a workout plan."""
-    params = request.params
-    task_data = params.get("task", {})
-
-    task = Task.from_dict(task_data)
+    """Handle message/send or tasks/send - validate a workout plan."""
+    task = extract_message_and_task(request)
     task.status = TaskStatus.WORKING
     tasks[task.id] = task
 
@@ -266,9 +303,7 @@ async def handle_task_cancel(request: JsonRpcRequest) -> JsonRpcResponse:
 
 async def stream_task(request: JsonRpcRequest):
     """Stream task execution via SSE."""
-    params = request.params
-    task_data = params.get("task", {})
-    task = Task.from_dict(task_data)
+    task = extract_message_and_task(request)
 
     # Send initial status
     yield {

@@ -125,7 +125,7 @@ class A2AClient:
         request = JsonRpcRequest(
             jsonrpc="2.0",
             id=task_id,
-            method="SendMessage",
+            method="message/send",
             params={
                 "message": message.to_dict(),
             },
@@ -150,7 +150,7 @@ class A2AClient:
         request_body = {
             "jsonrpc": "2.0",
             "id": task_id,
-            "method": "SendStreamingMessage",
+            "method": "message/stream",
             "params": {
                 "message": message.to_dict(),
             },
@@ -187,7 +187,7 @@ class A2AClient:
         request = JsonRpcRequest(
             jsonrpc="2.0",
             id=f"get-{task_id}",
-            method="GetTask",
+            method="tasks/get",
             params={"id": task_id},
         )
 
@@ -205,7 +205,7 @@ class A2AClient:
         request = JsonRpcRequest(
             jsonrpc="2.0",
             id=f"cancel-{task_id}",
-            method="CancelTask",
+            method="tasks/cancel",
             params={"id": task_id},
         )
 

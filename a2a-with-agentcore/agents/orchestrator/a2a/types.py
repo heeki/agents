@@ -1,7 +1,10 @@
 """A2A Protocol v1 Type Definitions.
 
 Implements the Google A2A (Agent-to-Agent) protocol types per the v1 specification.
-JSON-RPC methods: SendMessage, SendStreamingMessage, GetTask, CancelTask.
+JSON-RPC methods: message/send, message/stream, tasks/get, tasks/cancel.
+
+Field names use snake_case per the a2a-python SDK Pydantic models.
+All top-level result objects include a `kind` discriminator field.
 """
 
 from dataclasses import dataclass, field
@@ -27,17 +30,18 @@ class TaskState(str, Enum):
 class Part:
     """A content part in a message or artifact.
 
-    Uses flat structure with optional fields per v1 spec.
+    Uses `kind` discriminator: "text", "data", or "file".
     """
+    kind: str = "text"
     text: str | None = None
-    data: Any | None = None
+    data: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        if self.text is not None:
+        result: dict[str, Any] = {"kind": self.kind}
+        if self.kind == "text" and self.text is not None:
             result["text"] = self.text
-        if self.data is not None:
+        if self.kind == "data" and self.data is not None:
             result["data"] = self.data
         if self.metadata is not None:
             result["metadata"] = self.metadata
@@ -45,33 +49,49 @@ class Part:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Part":
+        kind = data.get("kind", "text")
         return cls(
+            kind=kind,
             text=data.get("text"),
             data=data.get("data"),
             metadata=data.get("metadata"),
         )
 
 
+def text_part(text: str) -> Part:
+    """Create a text part."""
+    return Part(kind="text", text=text)
+
+
+def data_part(data: dict[str, Any]) -> Part:
+    """Create a data part."""
+    return Part(kind="data", data=data)
+
+
 @dataclass
 class Message:
-    """A message in the A2A v1 protocol."""
+    """A message in the A2A v1 protocol.
+
+    Includes `kind: "message"` discriminator for streaming responses.
+    """
     role: str  # "user" or "agent"
     parts: list[Part] = field(default_factory=list)
-    messageId: str = field(default_factory=lambda: str(uuid.uuid4()))
-    contextId: str | None = None
-    taskId: str | None = None
+    message_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    context_id: str | None = None
+    task_id: str | None = None
     metadata: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
+            "kind": "message",
             "role": self.role,
             "parts": [p.to_dict() for p in self.parts],
-            "messageId": self.messageId,
+            "message_id": self.message_id,
         }
-        if self.contextId is not None:
-            result["contextId"] = self.contextId
-        if self.taskId is not None:
-            result["taskId"] = self.taskId
+        if self.context_id is not None:
+            result["context_id"] = self.context_id
+        if self.task_id is not None:
+            result["task_id"] = self.task_id
         if self.metadata is not None:
             result["metadata"] = self.metadata
         return result
@@ -81,9 +101,9 @@ class Message:
         return cls(
             role=data.get("role", "user"),
             parts=[Part.from_dict(p) for p in data.get("parts", [])],
-            messageId=data.get("messageId", str(uuid.uuid4())),
-            contextId=data.get("contextId"),
-            taskId=data.get("taskId"),
+            message_id=data.get("message_id", str(uuid.uuid4())),
+            context_id=data.get("context_id"),
+            task_id=data.get("task_id"),
             metadata=data.get("metadata"),
         )
 
@@ -112,7 +132,7 @@ class TaskStatus:
 @dataclass
 class Artifact:
     """An artifact produced by a task."""
-    artifactId: str = field(default_factory=lambda: str(uuid.uuid4()))
+    artifact_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     name: str | None = None
     description: str | None = None
     parts: list[Part] = field(default_factory=list)
@@ -120,7 +140,7 @@ class Artifact:
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
-            "artifactId": self.artifactId,
+            "artifact_id": self.artifact_id,
             "parts": [p.to_dict() for p in self.parts],
         }
         if self.name is not None:
@@ -134,21 +154,24 @@ class Artifact:
 
 @dataclass
 class Task:
-    """A task in the A2A v1 protocol."""
+    """A task in the A2A v1 protocol.
+
+    Includes `kind: "task"` discriminator for streaming responses.
+    """
     id: str
+    context_id: str
     status: TaskStatus
-    contextId: str | None = None
     artifacts: list[Artifact] = field(default_factory=list)
     history: list[Message] = field(default_factory=list)
     metadata: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
+            "kind": "task",
             "id": self.id,
+            "context_id": self.context_id,
             "status": self.status.to_dict(),
         }
-        if self.contextId is not None:
-            result["contextId"] = self.contextId
         if self.artifacts:
             result["artifacts"] = [a.to_dict() for a in self.artifacts]
         if self.history:
@@ -160,19 +183,24 @@ class Task:
 
 @dataclass
 class TaskStatusUpdateEvent:
-    """Streaming event for task status changes."""
-    taskId: str
+    """Streaming event for task status changes.
+
+    Includes `kind: "status-update"` discriminator.
+    """
+    task_id: str
+    context_id: str
     status: TaskStatus
-    contextId: str | None = None
+    final: bool = False
     metadata: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
-            "taskId": self.taskId,
+            "kind": "status-update",
+            "task_id": self.task_id,
+            "context_id": self.context_id,
             "status": self.status.to_dict(),
+            "final": self.final,
         }
-        if self.contextId is not None:
-            result["contextId"] = self.contextId
         if self.metadata is not None:
             result["metadata"] = self.metadata
         return result
@@ -180,23 +208,26 @@ class TaskStatusUpdateEvent:
 
 @dataclass
 class TaskArtifactUpdateEvent:
-    """Streaming event for artifact updates."""
-    taskId: str
+    """Streaming event for artifact updates.
+
+    Includes `kind: "artifact-update"` discriminator.
+    """
+    task_id: str
+    context_id: str
     artifact: Artifact
-    contextId: str | None = None
     append: bool = False
-    lastChunk: bool = True
+    last_chunk: bool = True
     metadata: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
-            "taskId": self.taskId,
+            "kind": "artifact-update",
+            "task_id": self.task_id,
+            "context_id": self.context_id,
             "artifact": self.artifact.to_dict(),
             "append": self.append,
-            "lastChunk": self.lastChunk,
+            "last_chunk": self.last_chunk,
         }
-        if self.contextId is not None:
-            result["contextId"] = self.contextId
         if self.metadata is not None:
             result["metadata"] = self.metadata
         return result
