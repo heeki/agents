@@ -44,32 +44,7 @@ registry.list:
 
 # Create a record from RECORD_CONFIG (default: etc/record.json), wait for ACTIVE, save to tmp/record.json
 registry.record.create:
-	uv run python src/main.py record.create | jq | tee tmp/record.json
-
-# Create records for all files in tmp/records/, saving each output to tmp/outputs/<name>.json
-registry.records.create:
-	@mkdir -p tmp/outputs
-	@for f in tmp/records/*.json; do \
-		name=$$(basename $$f .json); \
-		echo "=== $$f ===" >&2; \
-		RECORD_CONFIG=$$f uv run python src/main.py record.create | jq | tee tmp/record.json tmp/outputs/$$name.json; \
-	done
-
-# Submit all records in tmp/outputs/ for approval
-registry.records.submit:
-	@for f in tmp/outputs/*.json; do \
-		rid=$$(jq -r '.record_id' $$f); \
-		echo "=== Submitting $$rid ($$(basename $$f .json)) ===" >&2; \
-		uv run python src/main.py record.submit --record-id "$$rid" | jq; \
-	done
-
-# Approve all records in tmp/outputs/
-registry.records.approve:
-	@for f in tmp/outputs/*.json; do \
-		rid=$$(jq -r '.record_id' $$f); \
-		echo "=== Approving $$rid ($$(basename $$f .json)) ===" >&2; \
-		uv run python src/main.py record.approve --record-id "$$rid" | jq; \
-	done
+	uv run python src/main.py record.create | tee tmp/record.json | jq
 
 # Get a specific record (reads record_id from tmp/record.json)
 registry.record.get:
@@ -115,6 +90,31 @@ registry.records.delete:
 		rid=$$(jq -r '.record_id' $$f); \
 		echo "=== Deleting $$rid ($$(basename $$f .json)) ===" >&2; \
 		uv run python src/main.py record.delete --record-id "$$rid" | jq; \
+	done
+
+# Create records for all files in tmp/records/, saving each output to tmp/outputs/<name>.json
+registry.records.create:
+	@mkdir -p tmp/outputs
+	@for f in tmp/records/*.json; do \
+		name=$$(basename $$f .json); \
+		echo "=== $$f ===" >&2; \
+		RECORD_CONFIG=$$f uv run python src/main.py record.create | jq | tee tmp/record.json tmp/outputs/$$name.json; \
+	done
+
+# Submit all records in tmp/outputs/ for approval
+registry.records.submit:
+	@for f in tmp/outputs/*.json; do \
+		rid=$$(jq -r '.record_id' $$f); \
+		echo "=== Submitting $$rid ($$(basename $$f .json)) ===" >&2; \
+		uv run python src/main.py record.submit --record-id "$$rid" | jq; \
+	done
+
+# Approve all records in tmp/outputs/
+registry.records.approve:
+	@for f in tmp/outputs/*.json; do \
+		rid=$$(jq -r '.record_id' $$f); \
+		echo "=== Approving $$rid ($$(basename $$f .json)) ===" >&2; \
+		uv run python src/main.py record.approve --record-id "$$rid" | jq; \
 	done
 
 # ============================================================================

@@ -63,7 +63,7 @@ def _load_record_config() -> dict:
     # Convert inlineContent from dict to JSON string as required by the API.
     # Handles two layouts:
     #   flat:   descriptors.<type>.inlineContent (e.g. CUSTOM)
-    #   nested: descriptors.<type>.<wrapper>.inlineContent (e.g. A2A agentCard, MCP serverSchema)
+    #   nested: descriptors.<type>.<wrapper>.inlineContent (e.g. A2A agentCard, MCP server/tools)
     descriptors = copy.deepcopy(config.get("descriptors", {}))
     for desc_value in descriptors.values():
         # Flat layout (CUSTOM)
@@ -133,12 +133,12 @@ def cmd_record_create(args: argparse.Namespace) -> None:
 
     resp = client.create_record(
         name=config["name"],
-        protocol=config["protocol"],
+        descriptor_type=config["descriptorType"],
         descriptors=config["descriptors"],
         record_version=config.get("version") or config.get("recordVersion", "1.0"),
         description=config.get("description"),
     )
-    record_id = _record_id_from_arn(resp["registryRecordArn"])
+    record_id = _record_id_from_arn(resp["recordArn"])
     print(f"Record created: {record_id}", file=sys.stderr)
 
     print("Waiting for record to leave CREATING state...", file=sys.stderr)
@@ -257,12 +257,12 @@ def cmd_workflow(args: argparse.Namespace) -> None:
     print("\n=== Step 1: Create Record ===", file=sys.stderr)
     resp = client.create_record(
         name=config["name"],
-        protocol=config["protocol"],
+        descriptor_type=config["descriptorType"],
         descriptors=config["descriptors"],
         record_version=config.get("version") or config.get("recordVersion", "1.0"),
         description=config.get("description"),
     )
-    record_id = _record_id_from_arn(resp["registryRecordArn"])
+    record_id = _record_id_from_arn(resp["recordArn"])
     print(f"  Record created: {record_id}", file=sys.stderr)
 
     print("  Waiting for record to leave CREATING state...", file=sys.stderr)
@@ -297,7 +297,7 @@ def cmd_workflow(args: argparse.Namespace) -> None:
 
     _print({
         "record_id": record_id,
-        "record_arn": resp.get("registryRecordArn"),
+        "record_arn": resp.get("recordArn"),
         "token_type": token_info.get("token_type"),
         "list_result": _clean(list_result),
         "search_result": _clean(search_result),

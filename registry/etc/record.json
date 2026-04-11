@@ -1,17 +1,16 @@
 {
-  "name": "interceptors_demo_mcpserver",
-  "protocol": "MCP",
+  "name": "troubleshooting",
+  "descriptorType": "MCP",
   "descriptors": {
     "mcp": {
-      "serverSchema": {
+      "server": {
         "inlineContent": {
           "name": "aws.agentcore/interceptors-demo-mcpserver",
           "description": "Interceptors demo MCP server with web search, weather, geocoding, currency exchange, and time tools",
           "version": "31.0.0"
-        },
-        "schemaVersion": "auto"
+        }
       },
-      "toolSchema": {
+      "tools": {
         "inlineContent": {
           "tools": [
             {
@@ -70,8 +69,7 @@
               "inputSchema": {"type": "object", "properties": {"country": {"type": "string"}, "year": {"type": "integer"}}}
             }
           ]
-        },
-        "schemaVersion": "auto"
+        }
       }
     }
   },
