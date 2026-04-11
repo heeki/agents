@@ -1,15 +1,80 @@
 {
-  "name": "weather-mcp-server",
-  "descriptorType": "MCP",
+  "name": "interceptors_demo_mcpserver",
+  "protocol": "MCP",
   "descriptors": {
     "mcp": {
-      "server": {
+      "serverSchema": {
         "inlineContent": {
-          "name": "io.example/weather",
-          "description": "Weather data MCP server",
-          "version": "1.0.0"
-        }
+          "name": "aws.agentcore/interceptors-demo-mcpserver",
+          "description": "Interceptors demo MCP server with web search, weather, geocoding, currency exchange, and time tools",
+          "version": "31.0.0"
+        },
+        "schemaVersion": "auto"
+      },
+      "toolSchema": {
+        "inlineContent": {
+          "tools": [
+            {
+              "name": "hello_world",
+              "description": "Returns a hello world greeting",
+              "inputSchema": {"type": "object", "properties": {}}
+            },
+            {
+              "name": "fetch_webpage",
+              "description": "Fetches content from a web page URL",
+              "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}}}
+            },
+            {
+              "name": "geocode_location",
+              "description": "Geocodes a location string to coordinates",
+              "inputSchema": {"type": "object", "properties": {"location": {"type": "string"}}}
+            },
+            {
+              "name": "reverse_geocode",
+              "description": "Reverse geocodes coordinates to a location",
+              "inputSchema": {"type": "object", "properties": {"latitude": {"type": "number"}, "longitude": {"type": "number"}}}
+            },
+            {
+              "name": "get_weather",
+              "description": "Gets current weather for a location",
+              "inputSchema": {"type": "object", "properties": {"location": {"type": "string"}}}
+            },
+            {
+              "name": "get_exchange_rate",
+              "description": "Gets currency exchange rates",
+              "inputSchema": {"type": "object", "properties": {"from_currency": {"type": "string"}, "to_currency": {"type": "string"}}}
+            },
+            {
+              "name": "get_ip_info",
+              "description": "Gets information about an IP address",
+              "inputSchema": {"type": "object", "properties": {"ip": {"type": "string"}}}
+            },
+            {
+              "name": "web_search",
+              "description": "Performs a web search and returns results",
+              "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}}
+            },
+            {
+              "name": "get_current_time",
+              "description": "Gets the current time for a timezone",
+              "inputSchema": {"type": "object", "properties": {"timezone": {"type": "string"}}}
+            },
+            {
+              "name": "calculate_math",
+              "description": "Evaluates a mathematical expression",
+              "inputSchema": {"type": "object", "properties": {"expression": {"type": "string"}}}
+            },
+            {
+              "name": "get_public_holidays",
+              "description": "Gets public holidays for a country and year",
+              "inputSchema": {"type": "object", "properties": {"country": {"type": "string"}, "year": {"type": "integer"}}}
+            }
+          ]
+        },
+        "schemaVersion": "auto"
       }
     }
-  }
+  },
+  "description": "Interceptors demo MCP server with web search, weather, geocoding, currency exchange, and time tools",
+  "version": "2.1"
 }

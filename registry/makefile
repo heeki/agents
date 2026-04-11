@@ -42,29 +42,58 @@ registry.list:
 # REGISTRY — RECORDS
 # ============================================================================
 
-# Create a record from etc/record.json, wait for ACTIVE, save to tmp/record.json
+# Create a record from RECORD_CONFIG (default: etc/record.json), wait for ACTIVE, save to tmp/record.json
 registry.record.create:
 	uv run python src/main.py record.create | jq | tee tmp/record.json
 
+# Create records for all files in tmp/records/, saving each output to tmp/outputs/<name>.json
+registry.records.create:
+	@mkdir -p tmp/outputs
+	@for f in tmp/records/*.json; do \
+		name=$$(basename $$f .json); \
+		echo "=== $$f ===" >&2; \
+		RECORD_CONFIG=$$f uv run python src/main.py record.create | jq | tee tmp/record.json tmp/outputs/$$name.json; \
+	done
+
+# Submit all records in tmp/outputs/ for approval
+registry.records.submit:
+	@for f in tmp/outputs/*.json; do \
+		rid=$$(jq -r '.record_id' $$f); \
+		echo "=== Submitting $$rid ($$(basename $$f .json)) ===" >&2; \
+		uv run python src/main.py record.submit --record-id "$$rid" | jq; \
+	done
+
+# Approve all records in tmp/outputs/
+registry.records.approve:
+	@for f in tmp/outputs/*.json; do \
+		rid=$$(jq -r '.record_id' $$f); \
+		echo "=== Approving $$rid ($$(basename $$f .json)) ===" >&2; \
+		uv run python src/main.py record.approve --record-id "$$rid" | jq; \
+	done
+
 # Get a specific record (reads record_id from tmp/record.json)
 registry.record.get:
-	uv run python src/main.py record.get \
-		--record-id "$$(jq -r '.record_id' tmp/record.json)" | jq
+	@rid=$$(jq -r '.record_id // empty' tmp/record.json 2>/dev/null); \
+	if [ -z "$$rid" ]; then echo "ERROR: tmp/record.json missing or has no record_id" >&2; exit 1; fi; \
+	uv run python src/main.py record.get --record-id "$$rid" | jq
 
 # Submit the record for approval
 registry.record.submit:
-	uv run python src/main.py record.submit \
-		--record-id "$$(jq -r '.record_id' tmp/record.json)" | jq
+	@rid=$$(jq -r '.record_id // empty' tmp/record.json 2>/dev/null); \
+	if [ -z "$$rid" ]; then echo "ERROR: tmp/record.json missing or has no record_id" >&2; exit 1; fi; \
+	uv run python src/main.py record.submit --record-id "$$rid" | jq
 
 # Approve the record
 registry.record.approve:
-	uv run python src/main.py record.approve \
-		--record-id "$$(jq -r '.record_id' tmp/record.json)" | jq
+	@rid=$$(jq -r '.record_id // empty' tmp/record.json 2>/dev/null); \
+	if [ -z "$$rid" ]; then echo "ERROR: tmp/record.json missing or has no record_id" >&2; exit 1; fi; \
+	uv run python src/main.py record.approve --record-id "$$rid" | jq
 
 # Reject the record
 registry.record.reject:
-	uv run python src/main.py record.reject \
-		--record-id "$$(jq -r '.record_id' tmp/record.json)" | jq
+	@rid=$$(jq -r '.record_id // empty' tmp/record.json 2>/dev/null); \
+	if [ -z "$$rid" ]; then echo "ERROR: tmp/record.json missing or has no record_id" >&2; exit 1; fi; \
+	uv run python src/main.py record.reject --record-id "$$rid" | jq
 
 # List all records in the registry
 registry.record.list:
@@ -76,8 +105,17 @@ registry.record.search:
 
 # Delete the record
 registry.record.delete:
-	uv run python src/main.py record.delete \
-		--record-id "$$(jq -r '.record_id' tmp/record.json)" | jq
+	@rid=$$(jq -r '.record_id // empty' tmp/record.json 2>/dev/null); \
+	if [ -z "$$rid" ]; then echo "ERROR: tmp/record.json missing or has no record_id" >&2; exit 1; fi; \
+	uv run python src/main.py record.delete --record-id "$$rid" | jq
+
+# Delete all records in tmp/outputs/
+registry.records.delete:
+	@for f in tmp/outputs/*.json; do \
+		rid=$$(jq -r '.record_id' $$f); \
+		echo "=== Deleting $$rid ($$(basename $$f .json)) ===" >&2; \
+		uv run python src/main.py record.delete --record-id "$$rid" | jq; \
+	done
 
 # ============================================================================
 # REGISTRY — FULL WORKFLOW
@@ -93,3 +131,4 @@ clean:
 	rm -rf .venv
 	rm -rf iac/*_output.yaml
 	rm -f tmp/record.json tmp/registry_token.json tmp/cognito_token.json tmp/workflow.json
+	rm -rf tmp/outputs

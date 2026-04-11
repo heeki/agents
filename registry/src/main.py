@@ -60,12 +60,19 @@ def _load_record_config() -> dict:
     with open(path) as f:
         config = json.load(f)
 
-    # Convert inlineContent from dict to JSON string as required by the API
+    # Convert inlineContent from dict to JSON string as required by the API.
+    # Handles two layouts:
+    #   flat:   descriptors.<type>.inlineContent (e.g. CUSTOM)
+    #   nested: descriptors.<type>.<wrapper>.inlineContent (e.g. A2A agentCard, MCP serverSchema)
     descriptors = copy.deepcopy(config.get("descriptors", {}))
     for desc_value in descriptors.values():
-        server = desc_value.get("server", {})
-        if "inlineContent" in server and isinstance(server["inlineContent"], dict):
-            server["inlineContent"] = json.dumps(server["inlineContent"])
+        # Flat layout (CUSTOM)
+        if isinstance(desc_value.get("inlineContent"), dict):
+            desc_value["inlineContent"] = json.dumps(desc_value["inlineContent"])
+        # Nested layout (A2A, MCP)
+        for schema_obj in desc_value.values():
+            if isinstance(schema_obj, dict) and isinstance(schema_obj.get("inlineContent"), dict):
+                schema_obj["inlineContent"] = json.dumps(schema_obj["inlineContent"])
 
     config["descriptors"] = descriptors
     return config
@@ -126,10 +133,12 @@ def cmd_record_create(args: argparse.Namespace) -> None:
 
     resp = client.create_record(
         name=config["name"],
-        descriptor_type=config["descriptorType"],
+        protocol=config["protocol"],
         descriptors=config["descriptors"],
+        record_version=config.get("version") or config.get("recordVersion", "1.0"),
+        description=config.get("description"),
     )
-    record_id = _record_id_from_arn(resp["recordArn"])
+    record_id = _record_id_from_arn(resp["registryRecordArn"])
     print(f"Record created: {record_id}", file=sys.stderr)
 
     print("Waiting for record to leave CREATING state...", file=sys.stderr)
@@ -248,10 +257,12 @@ def cmd_workflow(args: argparse.Namespace) -> None:
     print("\n=== Step 1: Create Record ===", file=sys.stderr)
     resp = client.create_record(
         name=config["name"],
-        descriptor_type=config["descriptorType"],
+        protocol=config["protocol"],
         descriptors=config["descriptors"],
+        record_version=config.get("version") or config.get("recordVersion", "1.0"),
+        description=config.get("description"),
     )
-    record_id = _record_id_from_arn(resp["recordArn"])
+    record_id = _record_id_from_arn(resp["registryRecordArn"])
     print(f"  Record created: {record_id}", file=sys.stderr)
 
     print("  Waiting for record to leave CREATING state...", file=sys.stderr)
@@ -286,7 +297,7 @@ def cmd_workflow(args: argparse.Namespace) -> None:
 
     _print({
         "record_id": record_id,
-        "record_arn": resp.get("recordArn"),
+        "record_arn": resp.get("registryRecordArn"),
         "token_type": token_info.get("token_type"),
         "list_result": _clean(list_result),
         "search_result": _clean(search_result),
