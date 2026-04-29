@@ -21,6 +21,8 @@ TOOL_TEST_CASES: list[tuple[str, dict]] = [
     ("get_current_time",    {"timezone_name": "UTC"}),
     ("calculate_math",      {"expression": "sqrt(144) + 2**8"}),
     ("get_public_holidays", {"country_code": "US", "year": 2024}),
+    ("delete_user_data",    {"user_id": "test-user-123", "reason": "GDPR erasure request"}),
+    # revoke_user_access uses ctx.elicit() so it cannot be tested in stateless --all-tools mode
 ]
 
 

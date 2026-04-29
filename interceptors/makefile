@@ -171,6 +171,8 @@ runtime.status:
 	response.pop('ResponseMetadata', None); \
 	print(json.dumps(response, indent=2, default=str))"
 
+deploy: runtime.package runtime.deploy gateway.update
+
 # Sub-project 2, Phase 2: AgentCore Gateway
 gateway.deploy:
 	sam deploy \
@@ -189,6 +191,18 @@ gateway.deploy:
 			pInterceptorArn=$(O_INTERCEPTOR_ARN) \
 		--capabilities CAPABILITY_NAMED_IAM \
 		--no-confirm-changeset
+
+gateway.update:
+	$(eval P_ENCODED_ARN=$(shell echo '$(O_RUNTIME_ARN)' | sed 's/:/%3A/g; s/\//%2F/g'))
+	aws bedrock-agentcore-control update-gateway-target \
+		--profile $(PROFILE) \
+		--region $(REGION) \
+		--gateway-identifier $(O_GATEWAY_ID) \
+		--target-id $(O_GATEWAY_TARGET_ID) \
+		--name interceptors-demo-mcpserver \
+		--description "MCP server target routed through AgentCore Runtime" \
+		--target-configuration '{"mcp":{"mcpServer":{"endpoint":"https://bedrock-agentcore.$(REGION).amazonaws.com/runtimes/$(P_ENCODED_ARN)/invocations?qualifier=DEFAULT"}}}' \
+		--credential-provider-configurations '[{"credentialProviderType":"OAUTH","credentialProvider":{"oauthCredentialProvider":{"providerArn":"$(O_CREDENTIAL_PROVIDER_ARN)","scopes":["interceptor/invoke"],"grantType":"CLIENT_CREDENTIALS"}}}]'
 
 gateway.setup:
 	python3 gateway/setup_oauth.py \

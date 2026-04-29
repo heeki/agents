@@ -109,6 +109,10 @@ Resources:
           ScopeDescription: List get_public_holidays tool
         - ScopeName: get_public_holidays:write
           ScopeDescription: Invoke get_public_holidays tool
+        - ScopeName: delete_user_data:read
+          ScopeDescription: List delete_user_data tool
+        - ScopeName: delete_user_data:write
+          ScopeDescription: Invoke delete_user_data tool
 
   # Machine-to-machine client (client_credentials flow, used by gateway to call runtime)
   CognitoAppClient:
@@ -145,6 +149,8 @@ Resources:
         - "interceptor/calculate_math:write"
         - "interceptor/get_public_holidays:read"
         - "interceptor/get_public_holidays:write"
+        - "interceptor/delete_user_data:read"
+        - "interceptor/delete_user_data:write"
       SupportedIdentityProviders:
         - COGNITO
 

@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
+from pydantic import BaseModel
 from mcp.server.fastmcp import FastMCP, Context
 
 logging.basicConfig(level=logging.INFO)
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 CUSTOM_HEADER = "x-amzn-bedrock-agentcore-runtime-custom-interceptor-demo"
 
-mcp = FastMCP("interceptors-demo", host="0.0.0.0", port=8000, stateless_http=True)
+mcp = FastMCP("interceptors-demo", host="0.0.0.0", port=8000, stateless_http=False)
 
 
 @mcp.tool()
@@ -308,6 +309,56 @@ async def get_public_holidays(country_code: str, year: int) -> dict:
             {"date": h["date"], "name": h["localName"], "global": h.get("global", True)}
             for h in holidays
         ],
+    }
+
+
+@mcp.tool()
+async def delete_user_data(user_id: str, reason: str) -> dict:
+    """Delete all data associated with a user ID. This is a destructive action.
+    HITL Method 1: This tool is gated by an approval policy (pattern: delete_*) via the ApprovalHook.
+    The hook intercepts the tool call BEFORE execution and requires human approval.
+    Provide the user_id and reason for deletion."""
+    timestamp = datetime.now(timezone.utc).isoformat()
+    return {
+        "status": "deleted",
+        "user_id": user_id,
+        "reason": reason,
+        "deleted_at": timestamp,
+        "message": f"All data for user '{user_id}' has been deleted (simulated).",
+    }
+
+
+class RevokeConfirmation(BaseModel):
+    approved: bool
+
+
+@mcp.tool()
+async def revoke_user_access(user_id: str, service: str, ctx: Context) -> dict:
+    """Revoke a user's access to a specific service. This action uses inline MCP elicitation
+    to confirm with the operator before proceeding.
+    HITL Method 3: This tool uses ctx.elicit() to ask for confirmation mid-execution.
+    It does NOT rely on an approval policy or hook — the confirmation is built into the tool itself.
+    Provide the user_id and the service name to revoke access from."""
+    result = await ctx.elicit(
+        message=f"ACCESS REVOCATION: Revoke access for user '{user_id}' to service '{service}'.\n\nDo you approve this revocation?",
+        schema=RevokeConfirmation,
+    )
+
+    if result.action != "accept" or not result.data.approved:
+        return {
+            "status": "cancelled",
+            "user_id": user_id,
+            "service": service,
+            "message": "Access revocation was denied by operator.",
+        }
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    return {
+        "status": "revoked",
+        "user_id": user_id,
+        "service": service,
+        "revoked_at": timestamp,
+        "message": f"Access to '{service}' for user '{user_id}' has been revoked (simulated).",
     }
 
 
