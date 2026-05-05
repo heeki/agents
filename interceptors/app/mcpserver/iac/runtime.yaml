@@ -37,6 +37,18 @@ Parameters:
     Type: String
     Description: IdP user client ID for USER_PASSWORD_AUTH (NONE to skip)
     Default: "NONE"
+  pDelegatedApiEndpoint:
+    Type: String
+    Description: Delegated API endpoint URL (NONE to disable)
+    Default: "NONE"
+  pCredentialProviderName:
+    Type: String
+    Description: OBO credential provider name for delegated API token exchange (NONE to disable)
+    Default: "NONE"
+  pOboScope:
+    Type: String
+    Description: OAuth2 scope to request during OBO token exchange (NONE to disable)
+    Default: "NONE"
 
 Conditions:
   HasJWTAuth: !Not [!Equals [!Ref pIdpIssuer, "NONE"]]
@@ -47,6 +59,8 @@ Conditions:
   HasAnyClient: !Or
     - !Not [!Equals [!Ref pIdpM2MClientId, "NONE"]]
     - !Not [!Equals [!Ref pIdpUserClientId, "NONE"]]
+  HasDelegatedApi: !Not [!Equals [!Ref pDelegatedApiEndpoint, "NONE"]]
+  HasCredentialProvider: !Not [!Equals [!Ref pCredentialProviderName, "NONE"]]
 
 Resources:
   RuntimeRole:
@@ -88,6 +102,26 @@ Resources:
                   - xray:PutTraceSegments
                   - xray:PutTelemetryRecords
                 Resource: "*"
+        - PolicyName: TokenVault
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetWorkloadAccessToken
+                  - bedrock-agentcore:GetWorkloadAccessTokenForJWT
+                  - bedrock-agentcore:GetWorkloadAccessTokenForUserId
+                  - bedrock-agentcore:GetResourceOauth2Token
+                Resource:
+                  - !Sub "arn:aws:bedrock-agentcore:${pRegion}:${pAccountId}:workload-identity-directory/default"
+                  - !Sub "arn:aws:bedrock-agentcore:${pRegion}:${pAccountId}:workload-identity-directory/default/*"
+                  - !Sub "arn:aws:bedrock-agentcore:${pRegion}:${pAccountId}:token-vault/default"
+                  - !Sub "arn:aws:bedrock-agentcore:${pRegion}:${pAccountId}:token-vault/default/*"
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub "arn:aws:secretsmanager:${pRegion}:${pAccountId}:secret:bedrock-agentcore-identity*"
 
   Runtime:
     Type: AWS::BedrockAgentCore::Runtime
@@ -111,8 +145,12 @@ Resources:
       EnvironmentVariables:
         AGENT_OBSERVABILITY_ENABLED: "true"
         AWS_REGION: !Ref pRegion
+        DELEGATED_API_ENDPOINT: !If [HasDelegatedApi, !Ref pDelegatedApiEndpoint, ""]
+        CREDENTIAL_PROVIDER_NAME: !If [HasCredentialProvider, !Ref pCredentialProviderName, ""]
+        OBO_SCOPE: !If [HasCredentialProvider, !Ref pOboScope, ""]
       RequestHeaderConfiguration:
         RequestHeaderAllowlist:
+          - Authorization
           - X-Amzn-Bedrock-AgentCore-Runtime-Custom-Interceptor-Demo
       AuthorizerConfiguration: !If
         - HasJWTAuth

@@ -79,6 +79,9 @@ runtime.deploy:
 			pIdpM2MClientId=$(or $(O_IDP_CLIENT_ID),NONE) \
 			pIdpScopes=$(or $(O_IDP_SCOPES),NONE) \
 			pIdpUserClientId=$(or $(O_IDP_USER_CLIENT_ID),NONE) \
+			pDelegatedApiEndpoint=$(or $(P_DELEGATED_API_ENDPOINT),NONE) \
+			pCredentialProviderName=$(or $(P_OBO_CREDENTIAL_PROVIDER_NAME),NONE) \
+			pOboScope=$(or $(P_OBO_SCOPE),NONE) \
 		--capabilities CAPABILITY_NAMED_IAM \
 		--no-confirm-changeset
 
@@ -204,7 +207,7 @@ gateway.update:
 		--name interceptors-demo-mcpserver \
 		--description "MCP server target routed through AgentCore Runtime" \
 		--target-configuration '{"mcp":{"mcpServer":{"endpoint":"https://bedrock-agentcore.$(REGION).amazonaws.com/runtimes/$(P_ENCODED_ARN)/invocations?qualifier=DEFAULT"}}}' \
-		--credential-provider-configurations '[{"credentialProviderType":"OAUTH","credentialProvider":{"oauthCredentialProvider":{"providerArn":"$(O_CREDENTIAL_PROVIDER_ARN)","scopes":["interceptor/invoke"],"grantType":"CLIENT_CREDENTIALS"}}}]'
+		--credential-provider-configurations '[{"credentialProviderType":"OAUTH","credentialProvider":{"oauthCredentialProvider":{"providerArn":"$(O_CREDENTIAL_PROVIDER_ARN)","scopes":["interceptor/invoke"],"grantType":"CLIENT_CREDENTIALS"}}}]' | jq
 
 gateway.setup:
 	python3 gateway/setup_oauth.py \
@@ -315,3 +318,26 @@ gateway.status:
 	response = client.get_gateway(gatewayIdentifier='$(O_GATEWAY_ID)'); \
 	response.pop('ResponseMetadata', None); \
 	print(json.dumps(response, indent=2, default=str))"
+
+# Sub-project 3: OBO Credential Provider for Delegated API
+obo.setup:
+	python3 gateway/setup_oauth.py \
+		--action create \
+		--region $(REGION) \
+		--name $(P_OBO_CREDENTIAL_PROVIDER_NAME) \
+		--cognito-discovery-url $(P_OBO_ENTRA_DISCOVERY_URL) \
+		--cognito-client-id $(P_OBO_ENTRA_CLIENT_ID) \
+		--client-secret '$(P_OBO_ENTRA_CLIENT_SECRET)' \
+		--obo-grant-type JWT_AUTHORIZATION_GRANT
+
+obo.setup.get:
+	python3 gateway/setup_oauth.py \
+		--action get \
+		--region $(REGION) \
+		--name $(P_OBO_CREDENTIAL_PROVIDER_NAME)
+
+obo.setup.delete:
+	python3 gateway/setup_oauth.py \
+		--action delete \
+		--region $(REGION) \
+		--name $(P_OBO_CREDENTIAL_PROVIDER_NAME)
