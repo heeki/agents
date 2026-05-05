@@ -17,22 +17,36 @@ Parameters:
   pS3Prefix:
     Type: String
     Description: S3 key for the deployment package zip
-  pCognitoIssuer:
+  pIdpIssuer:
     Type: String
-    Description: Cognito Issuer URL for JWT validation (NONE = no JWT auth)
+    Description: IdP issuer URL for JWT validation (NONE = no JWT auth)
     Default: "NONE"
-  pCognitoAudience:
+  pIdpAudience:
     Type: String
-    Description: Cognito M2M Client ID used as JWT audience (NONE = no JWT auth)
+    Description: JWT audience value for token validation (NONE = no audience restriction)
     Default: "NONE"
-  pCognitoUserClientId:
+  pIdpM2MClientId:
     Type: String
-    Description: Cognito User Client ID for USER_PASSWORD_AUTH (NONE to skip)
+    Description: IdP M2M app client ID for AllowedClients JWT validation (NONE to skip)
+    Default: "NONE"
+  pIdpScopes:
+    Type: String
+    Description: Space-separated JWT scopes required for access (NONE = no scope restriction)
+    Default: "NONE"
+  pIdpUserClientId:
+    Type: String
+    Description: IdP user client ID for USER_PASSWORD_AUTH (NONE to skip)
     Default: "NONE"
 
 Conditions:
-  HasJWTAuth: !Not [!Equals [!Ref pCognitoIssuer, "NONE"]]
-  HasUserClientAuth: !Not [!Equals [!Ref pCognitoUserClientId, "NONE"]]
+  HasJWTAuth: !Not [!Equals [!Ref pIdpIssuer, "NONE"]]
+  HasAudience: !Not [!Equals [!Ref pIdpAudience, "NONE"]]
+  HasScopes: !Not [!Equals [!Ref pIdpScopes, "NONE"]]
+  HasM2MClientAuth: !Not [!Equals [!Ref pIdpM2MClientId, "NONE"]]
+  HasUserClientAuth: !Not [!Equals [!Ref pIdpUserClientId, "NONE"]]
+  HasAnyClient: !Or
+    - !Not [!Equals [!Ref pIdpM2MClientId, "NONE"]]
+    - !Not [!Equals [!Ref pIdpUserClientId, "NONE"]]
 
 Resources:
   RuntimeRole:
@@ -103,10 +117,20 @@ Resources:
       AuthorizerConfiguration: !If
         - HasJWTAuth
         - CustomJWTAuthorizer:
-            DiscoveryUrl: !Sub "${pCognitoIssuer}/.well-known/openid-configuration"
-            AllowedClients:
-              - !Ref pCognitoAudience
-              - !If [HasUserClientAuth, !Ref pCognitoUserClientId, !Ref AWS::NoValue]
+            DiscoveryUrl: !Sub "${pIdpIssuer}/.well-known/openid-configuration"
+            AllowedAudience: !If
+              - HasAudience
+              - - !Ref pIdpAudience
+              - !Ref AWS::NoValue
+            AllowedScopes: !If
+              - HasScopes
+              - !Split [" ", !Ref pIdpScopes]
+              - !Ref AWS::NoValue
+            AllowedClients: !If
+              - HasAnyClient
+              - - !If [HasM2MClientAuth, !Ref pIdpM2MClientId, !Ref AWS::NoValue]
+                - !If [HasUserClientAuth, !Ref pIdpUserClientId, !Ref AWS::NoValue]
+              - !Ref AWS::NoValue
         - !Ref AWS::NoValue
 
 Outputs:
