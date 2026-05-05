@@ -1,0 +1,21 @@
+# aws configuration
+PROFILE=default
+REGION=us-east-1
+ACCOUNTID=$(shell aws sts get-caller-identity --profile $(PROFILE) --query "Account" --output text)
+
+# api gateway stack
+P_API_STAGE=dev
+P_FN_MEMORY=128
+P_FN_TIMEOUT=30
+P_STACK=delegated-api
+P_FN_NAME=delegated-api-time
+
+# entra id configuration
+P_ENTRA_TENANT_ID=ef35ec75-79f0-440f-a4dc-4bdef301e5d3
+P_ENTRA_CLIENT_ID=19579e40-dda3-461f-86f8-04f3e05925ab
+P_ENTRA_ISSUER=https://login.microsoftonline.com/ef35ec75-79f0-440f-a4dc-4bdef301e5d3/v2.0
+P_REQUIRED_SCOPE=api://19579e40-dda3-461f-86f8-04f3e05925ab/time:read
+
+# outputs
+O_API_ENDPOINT=
+O_FN_ARN=
