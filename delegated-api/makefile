@@ -39,3 +39,12 @@ test.noauth.utc:
 
 test.auth:
 	python3 src/test_api.py $(O_API_ENDPOINT) --tz America/New_York
+
+test.obo:
+	P_ENTRA_TENANT_ID=$(P_ENTRA_TENANT_ID) \
+	P_OBO_CLIENT_APP_CLIENT_ID=$(P_OBO_CLIENT_APP_CLIENT_ID) \
+	P_OBO_CLIENT_APP_SECRET='$(P_OBO_CLIENT_APP_SECRET)' \
+	P_OBO_MCP_APP_CLIENT_ID=$(P_OBO_MCP_APP_CLIENT_ID) \
+	P_OBO_MCP_APP_SECRET='$(P_OBO_MCP_APP_SECRET)' \
+	P_OBO_API_SCOPE=$(P_OBO_API_SCOPE) \
+	python3 src/get_obo_token.py
